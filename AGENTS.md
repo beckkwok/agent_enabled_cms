@@ -6,7 +6,7 @@ Guidance for AI coding agents working in this repository. Read this first. It de
 
 `agent_enabled_cms` (AACMS) is an **agent-enabled content management system**: a PayloadCMS application that manages content, data, and agents together, with agents working on your behalf out of the box.
 
-It evolves from the `blog` project (https://github.com/beckkwok/blog), which was a single-function prototype: a food-order agent accepting orders and writing them to a Google Sheet. That prototype was limited — code changes were required whenever the function changed, there was no management UI for new orders, and no evaluation framework for the agent.
+It evolves from the 'food_delivery' project (https://github.com/beckkwok/food_delivery) , which was a single-function prototype: a food-order agent accepting orders and writing them to a Google Sheet. That prototype was limited — code changes were required whenever the function changed, there was no management UI for new orders, and no evaluation framework for the agent.
 
 This project replaces that model with a general framework: a central, CMS-managed data layer that agents and humans both operate against, protected by a user/role access mechanism.
 
@@ -20,15 +20,15 @@ This project replaces that model with a general framework: a central, CMS-manage
 Three layers. Code you write must respect this layering.
 
 ```
- Agent tier            LangChain.js (embedded)  |  LangChain (Python, independent)
-                        agents live here
-                        triggers: CMS front-end/WebMCP, backend queue, scheduler
+ Agent tier            LangChain.js (embedded in PayloadCMS)
+                        agents live here; identified by agent ID
+                        triggers: CMS front-end/MCP, backend queue, scheduler
                                 |
-                                |  agent ops / tool calls
+                                |  agent ops / tool calls via CMS access control
                                 v
  App tier              PayloadCMS  <----------------------- admin UI / web views
  (this repo)           TypeScript collections             (humans, front-end)
-                       access control + API endpoints + queue
+                       access control + API endpoints + MCP server + queue
                                 |
                                 |  all reads/writes via PayloadCMS
                                 v
@@ -52,24 +52,27 @@ Three layers. Code you write must respect this layering.
 - Provides:
   - Admin UI for human management + web views for data display.
   - API endpoints for agent/role-specific logic.
+  - MCP server (Payload CMS MCP) so agents/AI tools call the CMS through the same access-control layer.
   - Queue object (Payload queue) for background jobs.
   - LangChain dataset/config storage.
   - Front-end host.
-  - (Planned) WebMCP layer so agents can call the CMS.
 - All data is guarded by user/role access: only valid users/agents reach the corresponding information.
 
-### 3. LangChain.js (embedded) or LangChain (Python, independent) — agent tier
+### 3. LangChain.js (embedded in PayloadCMS) — agent tier
 
-- Agents live here.
+LangChain.js is embedded in the PayloadCMS process. No separate Python LangChain runtime — this keeps the trust boundary tight: an agent can only reach data through PayloadCMS, and it identifies itself by its own agent ID.
+
+- Agents live here, identified by agent ID.
 - Triggers:
-  - PayloadCMS front-end / WebMCP.
+  - PayloadCMS front-end / MCP.
   - Backend via queue.
   - Scheduler.
 - Agent configuration is stored in PayloadCMS (agents are configurable data, not hardcoded).
+- Agent ops/tool calls go through CMS access control — the CMS never hands raw DB access to an agent.
 
 ### Cross-cutting rule
 
-Data flow: `Agent / Front-end → PayloadCMS API → PostgreSQL`. Agents never own the source of truth; the CMS does.
+Data flow: `Agent / Front-end → PayloadCMS API (incl. MCP) → PostgreSQL`. Agents never own the source of truth; the CMS does.
 
 ## Data model categories
 
@@ -105,9 +108,11 @@ Two shapes to support:
 
 ## Roadmap (do not assume shipped until verified in code)
 
-1. Migrate the `blog` food-order prototype into this repo.
+1. Migrate the `blog` repo to this repo.
 2. Define core table schemas (groups above).
 3. Implement agent types, then agent-enabled applications on top of the framework.
+4. Agent evaluation framework — conversation logs, status capture, evaluation of agent results.
+5. Multi-agent orchestration / collaboration workflows.
 
 ## Conventions for code in this repo
 
