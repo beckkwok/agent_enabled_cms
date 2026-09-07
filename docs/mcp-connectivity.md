@@ -30,12 +30,12 @@ Per the docs: access controls are enforced at the Payload level **using the user
 - `overrideResponse` → sanitize fields before the model sees them.
 - Hooks can branch on `req.payloadAPI === 'MCP'`.
 
-## Open design decision: agent API-key provisioning
+## Decision: agent API-key policy (recorded for implementation)
 
-The plugin does not create keys for agents automatically. Decide:
+- **One API key per agent** — best flexibility and clean audit identity per agent (conversations/tool calls attributable to a single key owner).
+- **Plus one default/fallback API key** — a generic key used when no specific agent key applies (e.g. unauthenticated admin-side operations, bootstrapping, or an operation not tied to a single agent).
 
-- Where the API key lifecycle lives — e.g. a key generated in the admin on the Agent record vs. managed purely in **MCP → API Keys**.
-- Who provisions keys (admin UI vs. agent-registration code) and how rotation/revocation happens.
-- Whether one key per agent (recommended for audit identity) or keys shared per agent capability.
-
-Until decided, keep key creation manual in the admin MCP → API Keys collection and bind to the Agent user.
+Implementation notes to honor when building:
+- Provision the per-agent key on the Agent record; bind it to the Agent user so the key inherits that agent's access rules.
+- Treat the fallback key as a distinct, least-privilege key — never a superset of agent keys.
+- Rotation/revocation must be possible per key from the admin (MCP → API Keys), and fallback key must be revocable independently.

@@ -67,6 +67,7 @@ Agents talk to the CMS only through Payload's access-control layer. Two channels
   - Every request must carry a valid API key as a Bearer token; keyless requests are rejected.
   - Each API key is bound to a Payload **user** (incl. an `Agent` user) and inherits that user's collection access rules, hooks, and role restrictions — the trust boundary is preserved, not bypassed. Pass `req` through with `overrideAccess: false` and `user: req.user` in custom tools so the key owner's rules still gate the call.
   - Custom skill tools (`mcp.tools`) receive `(args, req)`; custom prompts and resources are supported. `onEvent` gives an audit/observability hook; `overrideResponse` sanitizes what the model sees.
+  - API-key policy (decided): **one key per agent** (audit identity) + **one default/fallback key** — see `docs/mcp-connectivity.md`.
 - **Queue (Payload queue)** — for backend-triggered / scheduled agent jobs. Job handlers run in-process in PayloadCMS and can enqueue agent work; results/status are written back through PayloadCMS collections.
 
 ### 3. LangChain.js (embedded in PayloadCMS) — agent tier
