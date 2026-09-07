@@ -13,12 +13,31 @@ This project replaces that model with a general framework: a central, CMS-manage
 ## Base and lineage
 
 - Derived from: `blog` project (https://github.com/beckkwok/blog) — the existing food-order/PayloadCMS prototype is the migration source.
-- Keep PayloadCMS (not Strapi). Rationale (archive): Payload is strongly typed (DB schema defined at compile time, DB called directly) → faster AI-agent development; fine-grained access control; full program control over content; queue object for background work (Strapi relies on cronjobs).
 - Content is written in TypeScript; schema is defined at compile time.
 
 ## Architecture (non-negotiable)
 
 Three layers. Code you write must respect this layering.
+
+```
+ Agent tier            LangChain.js (embedded)  |  LangChain (Python, independent)
+                        agents live here
+                        triggers: CMS front-end/WebMCP, backend queue, scheduler
+                                |
+                                |  agent ops / tool calls
+                                v
+ App tier              PayloadCMS  <----------------------- admin UI / web views
+ (this repo)           TypeScript collections             (humans, front-end)
+                       access control + API endpoints + queue
+                                |
+                                |  all reads/writes via PayloadCMS
+                                v
+ Data tier             PostgreSQL
+                       source of truth: CMS collections + LangChain data
+                       (vectors, doc indexes, session state)
+
+ Agent / Front-end -> PayloadCMS API -> PostgreSQL   (agents never own the source of truth)
+```
 
 ### 1. PostgreSQL — database server
 
