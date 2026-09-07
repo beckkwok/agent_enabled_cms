@@ -43,6 +43,7 @@ Three layers. Code you write must respect this layering.
 
 - Single source of truth.
 - Supports PayloadCMS collections (TypeScript-defined) and LangChain data (vectors, doc indexes, session state).
+- Vector search = **hybrid**: Postgres FTS + pgvector cosine fused by Reciprocal Rank Fusion (RRF), carried over from the `blog` repo. See `docs/retrieval.md`.
 
 ### 2. PayloadCMS — application tier (main app in this repo)
 
@@ -139,3 +140,4 @@ Two shapes to support:
 - `AGENTS.md` — this file (agent/coder guidance).
 - `docs/` — design & scenario notes:
   - `docs/mcp-connectivity.md` — MCP access-control model and agent-API-key design decision.
+  - `docs/retrieval.md` — hybrid (RRF) vector search decision and RAG × access-control open item.
