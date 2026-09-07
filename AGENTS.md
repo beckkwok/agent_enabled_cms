@@ -52,11 +52,22 @@ Three layers. Code you write must respect this layering.
 - Provides:
   - Admin UI for human management + web views for data display.
   - API endpoints for agent/role-specific logic.
-  - MCP server (Payload CMS MCP) so agents/AI tools call the CMS through the same access-control layer.
+  - MCP server via `@payloadcms/plugin-mcp` so agents/AI tools call the CMS through the same access-control layer.
   - Queue object (Payload queue) for background jobs.
   - LangChain dataset/config storage.
   - Front-end host.
 - All data is guarded by user/role access: only valid users/agents reach the corresponding information.
+
+### CMS ↔ Agent connectivity
+
+Agents talk to the CMS only through Payload's access-control layer. Two channels, both opt-in per capability:
+
+- **MCP server (`@payloadcms/plugin-mcp`)** — the primary channel for agent tool/skill calls.
+  - Authorization is two-layer: (1) a collection/global is enabled in plugin config with explicit operations (`find`/`create`/`update`/`delete`); (2) a per-key allow/disallow is toggled in the admin **MCP → API Keys** collection.
+  - Every request must carry a valid API key as a Bearer token; keyless requests are rejected.
+  - Each API key is bound to a Payload **user** (incl. an `Agent` user) and inherits that user's collection access rules, hooks, and role restrictions — the trust boundary is preserved, not bypassed. Pass `req` through with `overrideAccess: false` and `user: req.user` in custom tools so the key owner's rules still gate the call.
+  - Custom skill tools (`mcp.tools`) receive `(args, req)`; custom prompts and resources are supported. `onEvent` gives an audit/observability hook; `overrideResponse` sanitizes what the model sees.
+- **Queue (Payload queue)** — for backend-triggered / scheduled agent jobs. Job handlers run in-process in PayloadCMS and can enqueue agent work; results/status are written back through PayloadCMS collections.
 
 ### 3. LangChain.js (embedded in PayloadCMS) — agent tier
 
@@ -125,4 +136,5 @@ Two shapes to support:
 ## Docs inventory
 
 - `AGENTS.md` — this file (agent/coder guidance).
-- `docs/` — (create as needed) design & scenario notes e.g. SME Customer Service food-order scenario.
+- `docs/` — design & scenario notes:
+  - `docs/mcp-connectivity.md` — MCP access-control model and agent-API-key design decision.
