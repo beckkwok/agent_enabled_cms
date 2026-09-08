@@ -25,21 +25,37 @@ Working log for building the first version (AACMS). Each entry records the decis
 - "One-man-company bundles ship pre-configured" + multi-provider implies a seed script. Extend the blog `scripts/seed.ts` pattern to seed: roles, admin, Agent users, Provider records, and the default/fallback MCP API key.
 - Document the pattern in v1.
 
-## 5. Users collection = MCP API-key owner: merge, with one caveat (RESOLVED)
+## 5. User vs Agent: principals-in-User + separate Agent config collection (RESOLVED)
 
-Verified against the `@payloadcms/plugin-mcp` source (`packages/plugin-mcp` @ 3.x):
+Verified against the `@payloadcms/plugin-mcp` source (`packages/plugin-mcp` @ 3.x).
 
-- The plugin generates its own `payload-mcp-api-keys` collection. Each key has a required `user` relationship to `userCollection`, which **defaults to `config.admin.user`** (i.e. the blog's `Users` collection). So blog `Users` and the MCP key owner are the **same collection — merge, no separate table needed**.
-- Agents must therefore be rows in the **same `Users` collection** (a `type`/role field distinguishes `User`/`Admin`/`Agent`), so a key can bind to an Agent. This matches the AGENTS.md data model.
-- **Caveat (the thing to handle now):** the plugin's default access is self-service only.
-  - `payload-mcp-api-keys.access`: create = any authenticated `userCollection` user; read/update/delete = only your **own** keys.
-  - The `user` field has `access: { create: () => false, update: () => false }` with `defaultValue = req.user.id`. So the admin UI lets you create a key **bound to yourself only**; issuing a key on behalf of an Agent is blocked by default.
-  - To honour "one key per agent" you must either (a) provision keys **programmatically at Agent creation** via local API with `overrideAccess: true` and `user: <agentUserId>`, or (b) open cross-user issuance for trusted admins via `overrideApiKeyCollection` (relax the `user` field access / own-keys-only rules).
-- Note: key lookup at request time is by HMAC-SHA256 of the key against `payload.secret` stored as `apiKeyIndex` — so an agent key needs no Agent password; it authenticates through the MCP key (agent rows may have unusable/empty local credentials). Restrict `Agent`-type users from admin login and the admin UI via collection access rules.
+### The constraint that shapes the model
+MCP auth works like this:
+- Every key lives in the plugin's own `payload-mcp-api-keys` collection.
+- Each key's `user` is a **relationship to a single `userCollection`** (defaults to `config.admin.user`).
+- At request time the key resolves to that user → `req.user`; collection access rules run against it.
+
+Consequences:
+- There is **one auth collection for principals** — the plugin cannot bind keys to two different auth collections (humans vs. agents).
+- An "Agent-stored API key" doesn't authenticate by itself; the MCP endpoint only accepts keys in `payload-mcp-api-keys` bound to a user. An agent that queries data **must act under a principal row** in that user collection — the user's instinct was correct.
+
+### Decision: separate the two meanings of "Agent"
+- **`Agent` = the configurable thing** (prompts, provider → model, tools, status, kind) → its own CMS-managed collection (no auth). Matches "agents are configurable data, not hardcoded."
+- **`User` = the security principal** (`req.user`) → one auth collection holding Admins, humans, **and** agent principals, distinguished by `type` (`User`/`Admin`/`Agent`).
+- Each `Agent` config row has a `user` relationship → its `User` principal (type `Agent`). The MCP key is bound to that principal; the `Agent` row stores only a reference to the key/principal, never the credential.
+
+So one agent = **one config row + one principal row** (+ one MCP key). Identity stays in `User` because that is what MCP/access control can see; config stays clean in `Agent`.
+
+### Caveat (handle at implementation): plugin key issuance is self-service only
+- `payload-mcp-api-keys.access`: create = any authenticated `userCollection` user; read/update/delete = only your **own** keys.
+- The `user` field has `access: { create: () => false, update: () => false }` with `defaultValue = req.user.id`. Admin UI creates keys **bound to the creator only**; issuing on behalf of an Agent is blocked by default.
+- To honour "one key per agent": provision keys **programmatically at Agent creation** via local API with `overrideAccess: true` and `user: <agentPrincipalId>`, or open cross-user issuance via `overrideApiKeyCollection`.
+- Key lookup is by HMAC-SHA256 of the key against `payload.secret` stored as `apiKeyIndex` — an agent principal needs no usable password; it authenticates via the MCP key. Restrict `Agent`-type users from admin login/UI via collection access rules.
 
 ### Recommendation for v1
-- Extend blog `Users` with `type` (`User`/`Admin`/`Agent`) and `role` fields.
-- Provision agent keys in the same flow that creates an Agent user (seed or hook), using local API `overrideAccess: true` to bind `user: <agentId>` — one key per agent (audit identity) + one fallback key.
+- `User` (auth): `type` (`User`/`Admin`/`Agent`) + `role` relationship; `Agent` principals here.
+- `Agent` (no auth, config): kind, prompts, provider/model, tools, status, and `user` → its `User` principal.
+- One provisioning flow creates `Agent` + its principal `User` + MCP key bound to the principal (seed or hook, `overrideAccess: true`) — one key per agent (audit identity) + one fallback key.
 - Keep the admin-side default self-service rule unless a real need for admin cross-issuance appears.
 
 ## 6. RAG × access control (carried from docs/retrieval.md)

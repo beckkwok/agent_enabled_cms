@@ -94,9 +94,11 @@ Define tables within these groups:
 | Category | Default collections |
 | --- | --- |
 | **CMS** | Page (static), Blog/Post (user updates), Media |
-| **Agent** | Agent (metadata, references Provider + model), Chat session, Chat history |
-| **Framework** | User (username, user type `User`/`Admin`/`Agent`, role id), Role, Document (indexed for RAG, agent-processable), Provider (model provider) |
+| **Agent** | Agent (config: kind, prompts, provider/model, tools, status), Chat session, Chat history |
+| **Framework** | User (auth principal; username, user type `User`/`Admin`/`Agent`, role id), Role, Document (indexed for RAG, agent-processable), Provider (model provider) |
 > This is a **framework** project. The groups above are the core schema. Company/application-specific tables (e.g. menu, order, quotation) are not part of this repo — application projects are built on top of this framework. See `docs/building-applications.md` for the app-developer contract (what to add, what must not be touched to keep framework upgrades clean).
+>
+> An agent is **two rows**: its `Agent` config row (what it is) plus a `User` principal of type `Agent` (who it acts as for access control / MCP keys). See `docs/v1-open-items.md` #5.
 
 ## Agent types
 
