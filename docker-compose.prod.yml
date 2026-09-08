@@ -1,0 +1,52 @@
+# Production stack for the NAS. Usage:
+#   cp .env.prod.example .env   (fill in secrets on the NAS)
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  payload:
+    build: .
+    image: aacms:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Hostname `postgres` resolves inside the compose network (not 127.0.0.1).
+      # Password comes from .env (POSTGRES_PASSWORD) so it stays in sync with
+      # the postgres service below.
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/aacms
+      PAYLOAD_SECRET: ${PAYLOAD_SECRET:?set PAYLOAD_SECRET in .env}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      # 1 = use deterministic mock embeddings (no OpenAI credits needed).
+      # Set to 0 once your OpenAI account is funded for real embeddings.
+      MOCK_EMBEDDINGS: ${MOCK_EMBEDDINGS:-1}
+    volumes:
+      # Persist CMS uploads (media collection) across restarts.
+      - media:/app/media
+    ports:
+      # Reachable on the NAS LAN. Use Synology Reverse Proxy for HTTPS + a nice hostname.
+      - '3000:3000'
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: aacms
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs only on first init: creates the pgvector extension.
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d aacms']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Not published to the host: only the payload container needs it.
+
+volumes:
+  pgdata:
+  media:
