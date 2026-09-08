@@ -12,7 +12,7 @@ export const KnowledgeChunk: CollectionConfig = {
   admin: {
     useAsTitle: 'content',
     defaultColumns: ['knowledge', 'chunkIndex', 'updatedAt'],
-    group: 'RAG',
+    group: 'Framework',
     hidden: true,
   },
   access: privateCollectionAccess,

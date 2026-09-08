@@ -5,6 +5,9 @@ export const DEEPSEEK_MODEL = 'deepseek-v4-pro'
 
 let client: OpenAI | null = null
 
+// TODO(framework): more providers to support. This should resolve the
+// provider adapter via the Provider collection (openai/deepseek/anthropic/
+// local) + its keyRef instead of a hardcoded DeepSeek client.
 function getDeepSeekClient(): OpenAI {
   if (!client) {
     const apiKey = process.env.DEEPSEEK_API_KEY

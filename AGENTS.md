@@ -95,10 +95,13 @@ Define tables within these groups:
 | --- | --- |
 | **CMS** | Page (static), Blog/Post (user updates), Media |
 | **Agent** | Agent (config: kind, prompts, provider/model, tools, status), Chat session, Chat history |
-| **Framework** | User (auth principal; username, user type `User`/`Admin`/`Agent`, role id), Role, Document (indexed for RAG, agent-processable), Provider (model provider) |
+| **Framework** | User (auth principal; username, user type `User`/`Admin`/`Agent`, role id), Role, Knowledge (RAG source docs, agent knowledge base), Provider (model provider) |
+
 > This is a **framework** project. The groups above are the core schema. Company/application-specific tables (e.g. menu, order, quotation) are not part of this repo — application projects are built on top of this framework. See `docs/building-applications.md` for the app-developer contract (what to add, what must not be touched to keep framework upgrades clean).
 >
 > An agent is **two rows**: its `Agent` config row (what it is) plus a `User` principal of type `Agent` (who it acts as for access control / MCP keys). See `docs/v1-open-items.md` #5.
+>
+> **`Knowledge` is the agent knowledge base** — the RAG source documents agents retrieve from. It is framework-owned and feeds the hybrid retriever. Do **not** store personal or customer data (e.g. customer PII, orders) in `Knowledge`; company-specific operational data belongs in application tables on top of this framework.
 
 ## Agent types
 

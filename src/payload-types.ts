@@ -264,7 +264,7 @@ export interface Knowledge {
   id: number;
   title: string;
   /**
-   * Source text that will be chunked and embedded for retrieval-augmented generation. Re-saving (publishing) re-embeds the latest version.
+   * Source text that will be chunked and embedded for retrieval-augmented generation (the agent knowledge base). Store only internal/knowledge documents here — do NOT put personal or customer data in this collection.
    */
   content: string;
   /**
@@ -358,10 +358,16 @@ export interface Agent {
    * Agent display name.
    */
   name: string;
+  /**
+   * Single-shot runs one operation and returns a result; streaming is conversational (chatbot).
+   */
   kind: 'single-shot' | 'streaming';
+  /**
+   * Active agents may be triggered; inactive agents are disabled.
+   */
   status: 'active' | 'inactive';
   /**
-   * The User principal (type Agent) this agent acts as for access control / MCP keys.
+   * The User principal (type Agent) this agent acts as for access control / MCP keys. The MCP access key is issued against this principal in the admin MCP → API Keys collection — never store the key itself on this record.
    */
   user: number | User;
   /**

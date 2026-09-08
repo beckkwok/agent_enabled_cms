@@ -3,6 +3,9 @@ import { ChatOpenAI } from '@langchain/openai'
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 export const DEEPSEEK_MODEL = 'deepseek-v4-pro'
 
+// TODO(framework): model/provider config should be read from the Agent
+// record + Provider collection (docs/provider-model.md), not hardcoded env
+// constants. This getter will resolve an Agent's provider → keyRef → model.
 export function getChatModel(temperature?: number): ChatOpenAI {
   return new ChatOpenAI({
     modelName: DEEPSEEK_MODEL,

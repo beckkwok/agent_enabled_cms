@@ -12,7 +12,7 @@ export const Knowledge: CollectionConfig = {
   admin: {
     useAsTitle: 'title',
     defaultColumns: ['title', 'content', 'updatedAt'],
-    group: 'RAG',
+    group: 'Framework',
   },
   access: privateCollectionAccess,
   hooks: {
@@ -36,7 +36,8 @@ export const Knowledge: CollectionConfig = {
       required: true,
       admin: {
         description:
-          'Source text that will be chunked and embedded for retrieval-augmented generation. Re-saving (publishing) re-embeds the latest version.',
+          'Source text that will be chunked and embedded for retrieval-augmented generation (the agent knowledge base). ' +
+          'Store only internal/knowledge documents here — do NOT put personal or customer data in this collection.',
       },
     },
     {

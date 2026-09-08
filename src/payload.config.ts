@@ -18,6 +18,7 @@ import { ChatSession } from './collections/ChatSession'
 import { ChatMessage } from './collections/ChatMessage'
 import { pgVectorSchemaHook } from './collections/helpers/pgvector'
 import { ensureSearchTsvColumn } from './collections/helpers/searchTsv'
+import { migrations } from './migrations'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -39,12 +40,14 @@ export default buildConfig({
     pool: {
       connectionString: process.env.DATABASE_URL || '',
     },
-    // Dev mode auto-pushes the schema. Migrations will be generated for the
-    // new framework schema once the core collections are finalised.
+    // Dev mode auto-pushes the schema. In production schema push is disabled
+    // by Payload, so tables are created by running the committed migrations
+    // on startup via `prodMigrations`.
     push: true,
     afterSchemaInit: [pgVectorSchemaHook],
-    // Ensure the pgvector extension exists before schema push creates the
-    // vector(1536) column on `knowledge_chunks` in a fresh database.
+    prodMigrations: migrations,
+    // Ensure the pgvector extension exists before migrations create the
+    // vector(1536) column on `knowledge_chunks` in a fresh production DB.
     extensions: ['vector'],
   }),
   onInit: async (payload) => {

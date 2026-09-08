@@ -30,6 +30,9 @@ export const Agents: CollectionConfig = {
       ],
       defaultValue: 'single-shot',
       index: true,
+      admin: {
+        description: 'Single-shot runs one operation and returns a result; streaming is conversational (chatbot).',
+      },
     },
     {
       name: 'status',
@@ -41,6 +44,9 @@ export const Agents: CollectionConfig = {
       ],
       defaultValue: 'active',
       index: true,
+      admin: {
+        description: 'Active agents may be triggered; inactive agents are disabled.',
+      },
     },
     {
       name: 'user',
@@ -49,7 +55,10 @@ export const Agents: CollectionConfig = {
       required: true,
       index: true,
       admin: {
-        description: 'The User principal (type Agent) this agent acts as for access control / MCP keys.',
+        description:
+          'The User principal (type Agent) this agent acts as for access control / MCP keys. ' +
+          'The MCP access key is issued against this principal in the admin MCP → API Keys collection — ' +
+          'never store the key itself on this record.',
       },
     },
     {
