@@ -96,7 +96,6 @@ Define tables within these groups:
 | **CMS** | Page (static), Blog/Post (user updates), Media |
 | **Agent** | Agent (metadata, references Provider + model), Chat session, Chat history |
 | **Framework** | User (username, user type `User`/`Admin`/`Agent`, role id), Role, Document (indexed for RAG, agent-processable), Provider (model provider) |
-
 > This is a **framework** project. The groups above are the core schema. Company/application-specific tables (e.g. menu, order, quotation) are not part of this repo — application projects are built on top of this framework. See `docs/building-applications.md` for the app-developer contract (what to add, what must not be touched to keep framework upgrades clean).
 
 ## Agent types
@@ -145,3 +144,4 @@ Two shapes to support:
   - `docs/provider-model.md` — Provider collection (provider + API key + model pairing), multi-provider support.
   - `docs/retrieval.md` — hybrid (RRF) vector search decision and RAG × access-control open item.
   - `docs/building-applications.md` — contract for app developers extending the framework.
+  - `docs/v1-open-items.md` — design-stage decisions/open questions for building the first version.
