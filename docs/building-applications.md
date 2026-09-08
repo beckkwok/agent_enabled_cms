@@ -31,6 +31,15 @@ Add new collections, globals, tools, prompts, agents, and queue jobs **alongside
 
 > Rule of thumb: if a framework upgrade (`git pull` / new framework release) would conflict with your edit, it belongs in the application layer, not a framework file.
 
+## Collection lifecycle: schema is code + migrations, not runtime
+
+Payload collections are **static and code-defined** — there is no runtime/admin-UI schema builder (unlike Strapi). The schema is fixed at server boot from the Payload config. This constrains how app collections are added:
+
+- **Add at boot in your code, not at run time.** App collections are authored as TypeScript `CollectionConfig`s in your own codebase and passed to the Payload config (`buildConfig`). There is no API or admin action that registers a collection after startup.
+- **Compose, don't fork.** Import the framework config/collections and extend: e.g. `collections: [...frameworkCollections, Menu, Order, Quotation]`. Boot-time composition is supported; schema mutation at run time is not.
+- **Every schema change is a code + migration step.** After adding/altering a collection, run `payload generate:types` (regenerate TS types) and create a DB migration (see the `blog` repo pattern: `src/migrations/*`, drizzle `afterSchemaInit` hooks for extensions like the pgvector column). Apps inherit this discipline — new app collections ship with their own migrations.
+- **Consequence for "no-code" expectations:** an end user cannot add tables from the admin UI. If an app needs per-tenant custom fields at run time, model them as flexible data within a framework-owned collection (e.g. a JSON/block field), not as new tables.
+
 ## Working procedure for application developers
 
 1. Read `AGENTS.md`, `docs/development.md`, `docs/mcp-connectivity.md`, `docs/retrieval.md`, `docs/provider-model.md`.
