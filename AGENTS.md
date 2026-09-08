@@ -94,8 +94,8 @@ Define tables within these groups:
 | Category | Default collections |
 | --- | --- |
 | **CMS** | Page (static), Blog/Post (user updates), Media |
-| **Agent** | Agent (metadata), Chat session, Chat history |
-| **Framework** | User (username, user type `User`/`Admin`/`Agent`, role id), Role, Document (indexed for RAG, agent-processable) |
+| **Agent** | Agent (metadata, references Provider + model), Chat session, Chat history |
+| **Framework** | User (username, user type `User`/`Admin`/`Agent`, role id), Role, Document (indexed for RAG, agent-processable), Provider (model provider) |
 
 > This is a **framework** project. The groups above are the core schema. Company/application-specific tables (e.g. menu, order, quotation) are not part of this repo — application projects are built on top of this framework.
 
@@ -134,10 +134,13 @@ Two shapes to support:
 - Never hardcode agent prompts, roles, or configuration — model them as PayloadCMS collections.
 - Keep collection access-control rules explicit and least-privilege; mark user types `User`/`Admin`/`Agent`.
 - Routing of agent operations → CMS API, not direct DB.
+- **Testing**: unit tests are required for any change; end-to-end tests must cover the agent ↔ CMS path. Follow `docs/development.md`.
 
 ## Docs inventory
 
 - `AGENTS.md` — this file (agent/coder guidance).
 - `docs/` — design & scenario notes:
+  - `docs/development.md` — testing rules/layout (unit + agent ↔ CMS e2e).
   - `docs/mcp-connectivity.md` — MCP access-control model and agent-API-key design decision.
+  - `docs/provider-model.md` — Provider collection (provider + API key + model pairing), multi-provider support.
   - `docs/retrieval.md` — hybrid (RRF) vector search decision and RAG × access-control open item.
