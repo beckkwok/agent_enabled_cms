@@ -148,5 +148,6 @@ Two shapes to support:
   - `docs/mcp-connectivity.md` — MCP access-control model and agent-API-key design decision.
   - `docs/provider-model.md` — Provider collection (provider + API key + model pairing), multi-provider support.
   - `docs/retrieval.md` — hybrid (RRF) vector search decision and RAG × access-control open item.
+  - `docs/large-document-ingestion.md` — Design B reference: ingestion pipeline for large corporate documents (app-layer).
   - `docs/building-applications.md` — contract for app developers extending the framework.
   - `docs/v1-open-items.md` — design-stage decisions/open questions for building the first version.

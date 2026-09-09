@@ -67,15 +67,15 @@ Open: retrieval must not return documents the caller cannot read via Payload acc
 
 Payload has no runtime/admin schema builder. App collections are added in code at boot + `payload generate:types` + migrations. Full note in `docs/building-applications.md`.
 
-## 8. Large-document ingestion for RAG (OPEN — design TBD)
+## 8. Large-document ingestion for RAG (DECIDED: A for framework, B = app reference)
 
-Current pipeline (`Knowledge` → `chunkText` → `reindexKnowledge` hook → `knowledge-chunks`) handles pasted **text** only and is not built for big uploads (e.g. 1000+ page PDF). Analysis of the gaps:
+Current pipeline (`Knowledge` → `chunkText` → `reindexKnowledge` hook → `knowledge-chunks`) handles pasted **text** only and is not built for big uploads (e.g. 1000+ page PDF). Gap analysis:
 
 - **No file upload.** `Knowledge.content` is a textarea; no PDF/upload field or text-extraction step exists.
 - **`embedTexts` sends the whole array in one call** (`src/lib/embeddings.ts:44-49`) — a 1000+ page doc yields 10k–50k chunks, blowing past per-request/rate limits. Needs internal batching + retries.
 - **Indexing is synchronous in the `afterChange` hook** (`reindexKnowledge.ts`) — large docs hang the save request. Should route through the Payload queue.
 - Chunking itself is fine (800 chars / 200 overlap, boundary-snapped).
 
-Relates to #2 (vector/chunk write path rule). Options on the table (user to choose next):
-- **Quick solution:** file/upload field on Knowledge (or Media ref) + sync text extraction + batched `embedTexts` + run in the Payload queue; status surfaced via document status fields.
-- **Flexible solution:** dedicated ingestion design — `Document` collection w/ file + status, extraction workers, queue tasks with retry/backoff + progress, chunk/embedding batching per Provider config, plus a reindex/status collection and admin progress view. Integrates Provider model + access-control open items.
+### Decision
+- **Design A (quick) → framework baseline.** Implement in the core framework: upload/file field on `Knowledge`, text extraction for common formats, batched `embedTexts`, reindex as a Payload queue job, and document status fields. See plan A outline in this repo.
+- **Design B (flexible) → application reference only.** Full ingestion pipeline (per-source extractors/OCR, per-page provenance, `IngestionRun` history, Provider-driven embedding, Document visibility × access control) is documented for apps that need large corporate document handling. Reference: `docs/large-document-ingestion.md`. App developers build it **on top of** the framework per `docs/building-applications.md` — it must not modify framework-owned schema.
