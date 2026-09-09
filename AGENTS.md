@@ -122,6 +122,7 @@ Two shapes to support:
 - Agent management in CMS: create agents, manage prompts.
 - Agent lifecycle observability: conversations logged, status captured, multi-agent collaboration supported.
 - CMS exposes APIs for agent skills/operations: write transactions, read operations, calculation/reporting.
+- Secrets protected by design: agent/CMS access keys are stored only as HMAC hashes bound to user principals (never plaintext in the DB), and model-provider keys live only in environment/secrets referenced by `Provider.keyRef`.
 
 ## Roadmap (do not assume shipped until verified in code)
 
