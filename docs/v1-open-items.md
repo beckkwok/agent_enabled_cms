@@ -110,3 +110,16 @@ Candidate mitigations (to design later):
 - **Human-in-the-loop** for high-risk operations (e.g. confirm before writes/deletes).
 
 Status: **not implemented** — capture as a first-class workstream alongside the evaluation framework (roadmap step 4). Do not treat the current setup as safe against adversarial users until this is designed and tested.
+
+## 10. Provider API key: true server-side masking (ENHANCEMENT — not good practice currently)
+
+The `Provider.apiKey` admin field (`src/components/admin/ApiKeyField.tsx`) masks the key **presentationally only**: `afterRead` decrypts the stored value, so the plaintext key is present in the Admin browser's page source / form state and can be viewed via view-source or devtools. Acceptable for Admin-only access, but not good practice.
+
+Enhancement: make the plaintext never reach the browser.
+- `afterRead` returns a **sentinel/masked marker** (e.g. `'__STORED__'` or a boolean `hasKey`) instead of decrypting.
+- The custom component renders the mask + replace input from the sentinel.
+- `beforeChange`: if the submitted value equals the sentinel → keep the previously stored encrypted value; if empty → clear; otherwise encrypt the new value.
+- The runtime resolver (`resolveProviderApiKey`) must decrypt **server-side** (read the stored value directly / via local API with a trusted context), since it no longer receives plaintext from a normal read.
+- Verify `Provider` reads via MCP/REST never expose plaintext for non-Admins (already blocked by field access, but re-check with the sentinel approach).
+
+Status: **open enhancement** — current masking is presentational only. See also #9 (credential leakage).

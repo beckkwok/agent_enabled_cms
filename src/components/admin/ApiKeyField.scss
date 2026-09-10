@@ -1,0 +1,87 @@
+.api-key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__masked,
+  &__editor {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+
+  &__value {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+    color: var(--theme-elevation-800);
+    background: var(--theme-elevation-100);
+    border-radius: 4px;
+    padding: 8px 12px;
+  }
+
+  &__input {
+    flex: 1 1 280px;
+    min-width: 220px;
+    padding: 10px 12px;
+    border: 1px solid var(--theme-elevation-150);
+    border-radius: 4px;
+    background: var(--theme-input-bg, var(--theme-elevation-0));
+    color: var(--theme-text);
+    font-family: var(--font-mono, monospace);
+
+    &:focus {
+      outline: none;
+      border-color: var(--theme-elevation-400);
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  &__btn {
+    cursor: pointer;
+    padding: 8px 12px;
+    border: 1px solid var(--theme-elevation-150);
+    border-radius: 4px;
+    background: var(--theme-elevation-0);
+    color: var(--theme-text);
+    font-size: 0.8rem;
+    line-height: 1;
+
+    &:hover {
+      background: var(--theme-elevation-100);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    &--primary {
+      background: var(--theme-elevation-800);
+      color: var(--theme-elevation-0);
+      border-color: var(--theme-elevation-800);
+
+      &:hover {
+        background: var(--theme-elevation-600);
+      }
+    }
+
+    &--danger {
+      color: var(--theme-error-500);
+      border-color: var(--theme-error-500);
+      background: transparent;
+    }
+  }
+
+  &__empty,
+  &__description {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--theme-elevation-500);
+  }
+}

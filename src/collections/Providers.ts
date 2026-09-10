@@ -85,6 +85,9 @@ export const Providers: CollectionConfig = {
       admin: {
         description:
           'Optional: paste the provider API key here (stored encrypted). Use keyRef for env/secret-manager instead. Only Admins can read or edit this.',
+        components: {
+          Field: '/components/admin/ApiKeyField#ApiKeyField',
+        },
       },
     },
     {

@@ -33,6 +33,7 @@ Why a paired grouping: a key is only meaningful *with* its provider — an OpenA
 - **Resolution order** (`src/lib/provider-key.ts`): (1) `keyRef` → `process.env[keyRef]` if set/non-empty; (2) the pasted `apiKey` (already decrypted when read through Payload). Neither → clear configuration error.
 - **Encryption at rest** reuses Payload's own mechanism (`payload.encrypt` / `payload.decrypt`): algorithm **AES-256-CTR**, random 16-byte IV prepended to the ciphertext, key = `sha256(PAYLOAD_SECRET).hex.slice(0,32)`. This is **symmetric/reversible** — anyone with the DB dump *and* `PAYLOAD_SECRET` can recover the key. That is the accepted trade-off for admin-pasted keys.
 - **Access control:** the `apiKey` field is `read/create/update: isAdmin`. Agents/humans never see it. The MCP `providers` tool additionally redacts `apiKey` via `overrideResponse` (belt-and-braces), so an agent reading providers can't leak the credential.
+- **Admin UX (masking):** the field uses a custom admin component (`src/components/admin/ApiKeyField.tsx`) that never displays the stored key — it shows a `••••••••` mask with a **Replace key** (password input) and **Clear** control. An untouched key is preserved on save; only an explicit replacement changes it. Note: because `afterRead` decrypts for Admin reads, the plaintext is present in the Admin browser's form state; masking is **presentational only**. True server-side masking (plaintext never reaches the browser) is tracked as an enhancement in `docs/v1-open-items.md` #10.
 
 ### Rules
 
