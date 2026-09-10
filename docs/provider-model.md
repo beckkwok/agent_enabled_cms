@@ -21,19 +21,27 @@ Why a paired grouping: a key is only meaningful *with* its provider — an OpenA
   - `name` — display name (e.g. `openai-prod`, `deepseek`).
   - `provider` — type/select: `openai` | `deepseek` | `anthropic` | `local` | … (the SDK adapter to use).
   - `models` — list of available model ids (e.g. `text-embedding-3-small`, `gpt-4o`, `deepseek-chat`).
-  - `keyRef` — **reference to a credential stored in env/secrets, never in the DB** (e.g. `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`). The collection stores the env var name / secret handle, not the secret.
+  - `keyRef` — **reference to a credential stored in env/secrets** (e.g. `OPENAI_API_KEY`). The collection stores the env var name / secret handle, not the secret. **Takes precedence** over a pasted key.
+  - `apiKey` — **optional user-pasted key**, stored **encrypted at rest** (AES-256-CTR via `PAYLOAD_SECRET`; decrypt-on-read), so a user can paste a provider key in the admin UI without shell/secret-manager access. Admin-only field access.
+  - `baseUrl` — optional base URL override for local/self-hosted providers.
   - `enabled` — flag.
 - **`Agent`** references `Provider` + picks a `model` (chat/embedding) from it.
-- Runtime adapter resolves `keyRef` → env at call time.
+- Runtime adapter resolves the key via `resolveProviderApiKey()`: `keyRef` env var first, else the decrypted `apiKey`.
+
+### Key handling & encryption
+
+- **Resolution order** (`src/lib/provider-key.ts`): (1) `keyRef` → `process.env[keyRef]` if set/non-empty; (2) the pasted `apiKey` (already decrypted when read through Payload). Neither → clear configuration error.
+- **Encryption at rest** reuses Payload's own mechanism (`payload.encrypt` / `payload.decrypt`): algorithm **AES-256-CTR**, random 16-byte IV prepended to the ciphertext, key = `sha256(PAYLOAD_SECRET).hex.slice(0,32)`. This is **symmetric/reversible** — anyone with the DB dump *and* `PAYLOAD_SECRET` can recover the key. That is the accepted trade-off for admin-pasted keys.
+- **Access control:** the `apiKey` field is `read/create/update: isAdmin`. Agents/humans never see it. The MCP `providers` tool additionally redacts `apiKey` via `overrideResponse` (belt-and-braces), so an agent reading providers can't leak the credential.
 
 ### Rules
 
-- **Never store provider keys in collection fields.** The `Provider` doc holds a reference/env name only.
+- **Never store provider keys in plaintext.** Either `keyRef` (env/secret manager) or the encrypted `apiKey` field.
 - **Never hardcode a vendor** in agent logic — always go through the `Provider` selection (matches the repo convention: model prompts/roles/config as PayloadCMS data).
 - Embedding and chat may use *different* providers (embedding model from one `Provider`, reasoning model from another) — each is a normal `Provider` record.
 - Tests must be provider-agnostic: inject a stub/mock provider (blog's `MOCK_EMBEDDINGS` pattern) so unit/e2e suites need no real keys (see `docs/development.md`).
 
 ## Open at implementation
 
-- Whether `Provider` needs a per-record base URL for local/self-hosted models (e.g. Ollama) — likely yes as an optional field.
 - How per-deployment providers are seeded (env-driven seed script vs. admin UI at go-live).
+- Whether pasted keys are per-deployment or per-tenant (multi-tenant).

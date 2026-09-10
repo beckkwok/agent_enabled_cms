@@ -337,9 +337,13 @@ export interface Provider {
       }[]
     | null;
   /**
-   * Environment/secret variable name holding the API key, e.g. OPENAI_API_KEY. Never store the key itself here.
+   * Environment/secret variable name holding the API key, e.g. OPENAI_API_KEY. Takes precedence over the pasted key below. Never store the key itself here.
    */
   keyRef?: string | null;
+  /**
+   * Optional: paste the provider API key here (stored encrypted). Use keyRef for env/secret-manager instead. Only Admins can read or edit this.
+   */
+  apiKey?: string | null;
   /**
    * Optional base URL override (local/self-hosted providers).
    */
@@ -732,6 +736,7 @@ export interface ProvidersSelect<T extends boolean = true> {
         id?: T;
       };
   keyRef?: T;
+  apiKey?: T;
   baseUrl?: T;
   enabled?: T;
   updatedAt?: T;

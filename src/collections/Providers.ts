@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
-import { adminCollectionAccess } from './helpers/access'
+import { adminCollectionAccess, isAdmin } from './helpers/access'
 
 export const Providers: CollectionConfig = {
   slug: 'providers',
@@ -57,7 +57,34 @@ export const Providers: CollectionConfig = {
       name: 'keyRef',
       type: 'text',
       admin: {
-        description: 'Environment/secret variable name holding the API key, e.g. OPENAI_API_KEY. Never store the key itself here.',
+        description:
+          'Environment/secret variable name holding the API key, e.g. OPENAI_API_KEY. Takes precedence over the pasted key below. Never store the key itself here.',
+      },
+    },
+    {
+      name: 'apiKey',
+      type: 'text',
+      // Field-level access: the decrypted key is only ever exposed to Admins.
+      access: {
+        read: isAdmin,
+        create: isAdmin,
+        update: isAdmin,
+      },
+      hooks: {
+        // Encrypt at rest (AES-256-CTR via PAYLOAD_SECRET), decrypt on read —
+        // the same mechanism Payload uses for auth API keys.
+        beforeChange: [
+          ({ value, req }) =>
+            typeof value === 'string' && value.length > 0 ? req.payload.encrypt(value) : value,
+        ],
+        afterRead: [
+          ({ value, req }) =>
+            typeof value === 'string' && value.length > 0 ? req.payload.decrypt(value) : value,
+        ],
+      },
+      admin: {
+        description:
+          'Optional: paste the provider API key here (stored encrypted). Use keyRef for env/secret-manager instead. Only Admins can read or edit this.',
       },
     },
     {

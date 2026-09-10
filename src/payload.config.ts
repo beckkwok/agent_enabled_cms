@@ -62,7 +62,26 @@ export default buildConfig({
         'chat-sessions': { enabled: { find: true } },
         'chat-messages': { enabled: { find: true, create: true } },
         roles: { enabled: { find: true } },
-        providers: { enabled: { find: true } },
+        providers: {
+          enabled: { find: true },
+          // Belt-and-braces: never expose the provider credential to models.
+          // Field-level access already restricts `apiKey` to Admins, but strip
+          // any residual occurrence from the model-facing response too.
+          overrideResponse: (response) => {
+            response.content = response.content.map((item) =>
+              item.type === 'text'
+                ? {
+                    ...item,
+                    text: item.text.replace(
+                      /"apiKey"\s*:\s*"(?:[^"\\]|\\.)*"/g,
+                      '"apiKey": "[redacted]"',
+                    ),
+                  }
+                : item,
+            )
+            return response
+          },
+        },
         agents: { enabled: { find: true } },
       },
     }),

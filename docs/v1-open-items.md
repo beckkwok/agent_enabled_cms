@@ -25,6 +25,12 @@ Working log for building the first version (AACMS). Each entry records the decis
 
 - "One-man-company bundles ship pre-configured" + multi-provider implies a seed script. Extend the blog `scripts/seed.ts` pattern to seed: roles, admin, Agent users, Provider records, and the default/fallback MCP API key.
 - Document the pattern in v1.
+- **Implemented (framework bootstrap):** `scripts/seed.ts` now seeds roles, providers, an admin, an Agent principal + config row, and the per-agent + default/fallback MCP keys (bound to their principals, capability toggles mirroring the MCP plugin config).
+
+### MCP key storage & handoff (clarification + open item)
+- **Storage:** `payload_mcp_api_keys.api_key` holds the raw key **encrypted** with `PAYLOAD_SECRET` (reversible, decrypt-on-read); `api_key_index` holds `HMAC-SHA256(secret, key)`. MCP authentication matches on the HMAC index — no decryption is needed to authenticate.
+- **Agent retrieval:** agents do **not** read their key from the CMS. The seed prints the raw key **once**; the operator must copy it into the agent's env/secret store. The CMS verifies, it is not a key vault the agent queries.
+- **Open:** no durable auto-provisioning handoff yet. Options when building agent deployment: (a) manual copy (current, fine for one-man setup); (b) provisioning hook writes the key to a secret store (Vault/SSM/K8s) the agent reads at boot; (c) deploy step injects it. Also note default key read access is **own-keys-only**, so cross-user (admin-issued) keys need `overrideApiKeyCollection` to be re-readable.
 
 ## 5. User vs Agent: principals-in-User + separate Agent config collection (RESOLVED)
 
@@ -84,3 +90,23 @@ Current pipeline (`Knowledge` → `chunkText` → `reindexKnowledge` hook → `k
 - **`Knowledge` (framework, Design A)**: small–medium, text-oriented sources — a large text blob, `.md` file, plain/text-based PDF, or hand-maintained reference notes. Admin can paste or upload the file; pipeline chunks + embeds it directly. No page-level provenance or heavy structure expected.
 - **Large-document ingestion (app-layer, Design B)**: very large corporate documents where fidelity, scale, provenance, and operability matter — 1000+ page PDFs, scanned archives (OCR needed), structured packs (tables/headings to preserve), anything needing per-page citations, ingestion history, retries, and Document-level access control. Built by the application on top of the framework.
 - Rule of thumb: if "paste the text into a Knowledge doc" is acceptable for the content, use `Knowledge` (A). If you need upload-scale reliability, page citations, OCR/structure, run history, or doc-scoped visibility, design the app ingestion pipeline (B).
+
+## 9. Agent disclosure of sensitive info during chat / red-team testing (OPEN — handle later)
+
+Agents can be manipulated into leaking sensitive data (system prompts, internal config, credentials, data the caller shouldn't see) via prompt injection, jailbreaks, or data-exfiltration prompts. This is a security concern beyond RAG access control (#6): even data an agent *may* read must not be *disclosed* to the wrong party.
+
+Threat surface to cover:
+- **System-prompt / config leakage** — agent reveals its instructions, provider/model, keyRef names, internal tool list.
+- **Data exfiltration** — tricking the agent into returning records the caller can't read (ties into #6), or PII/secret values from context or tools.
+- **Tool abuse** — prompt injection steering MCP tool calls toward write/delete or broad reads.
+- **Credential leakage** — provider keys / MCP keys surfacing in output or logs.
+
+Candidate mitigations (to design later):
+- **Input/output guardrails** — pre-prompt injection detection, output filtering/redaction before it reaches the user (mirror the MCP `overrideResponse` pattern), and secret/PII scanners on responses.
+- **Least privilege by construction** — already partly in place: per-agent MCP keys with per-capability toggles, `overrideAccess: false`, field-level access (e.g. `Provider.apiKey` Admin-only). Ensure agents never hold credentials they don't need.
+- **Never put secrets in model context** — keys stay out of prompts/context; reference by handle only.
+- **Evaluation as a safety gate** — a red-team suite (prompt-injection, jailbreak, exfiltration cases) run as part of the agent evaluation framework (roadmap #4), with pass/fail gates before shipping an agent.
+- **Observability** — log/alert on suspicious prompts and on tool calls that touch sensitive collections (feeds conversation logs + `onEvent`).
+- **Human-in-the-loop** for high-risk operations (e.g. confirm before writes/deletes).
+
+Status: **not implemented** — capture as a first-class workstream alongside the evaluation framework (roadmap step 4). Do not treat the current setup as safe against adversarial users until this is designed and tested.
