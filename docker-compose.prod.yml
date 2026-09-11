@@ -22,6 +22,8 @@ services:
       # 1 = use deterministic mock embeddings (no OpenAI credits needed).
       # Set to 0 once your OpenAI account is funded for real embeddings.
       MOCK_EMBEDDINGS: ${MOCK_EMBEDDINGS:-1}
+      # 1 = agents use a fake chat model (no provider key needed). Set 0 for real models.
+      MOCK_LLM: ${MOCK_LLM:-0}
     volumes:
       # Persist CMS uploads (media collection) across restarts.
       - media:/app/media

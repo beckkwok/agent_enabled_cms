@@ -64,10 +64,9 @@ export default buildConfig({
     pool: {
       connectionString: process.env.DATABASE_URL || '',
     },
-    // Dev mode auto-pushes the schema. In production schema push is disabled
-    // by Payload, so tables are created by running the committed migrations
-    // on startup via `prodMigrations`.
-    push: true,
+    // Push schema automatically in development only. In production Payload
+    // uses the committed migrations (prodMigrations) — never prompt/push.
+    push: process.env.NODE_ENV !== 'production',
     afterSchemaInit: [pgVectorSchemaHook],
     prodMigrations: migrations,
     // Ensure the pgvector extension exists before migrations create the
