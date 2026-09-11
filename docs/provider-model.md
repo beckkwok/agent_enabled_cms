@@ -28,6 +28,23 @@ Why a paired grouping: a key is only meaningful *with* its provider — an OpenA
 - **`Agent`** references `Provider` + picks a `model` (chat/embedding) from it.
 - Runtime adapter resolves the key via `resolveProviderApiKey()`: `keyRef` env var first, else the decrypted `apiKey`.
 
+### Runtime resolution (implemented)
+
+`src/lib/provider-runtime.ts` is the single place that turns a `Provider` record into SDK clients:
+
+- `resolveProviderBaseUrl(provider)` — explicit `baseUrl` wins, else the per-type default (`deepseek` → `https://api.deepseek.com`, `anthropic` → `https://api.anthropic.com`, `openai`/`local` → SDK default; `local` requires `baseUrl`).
+- `resolveProviderModel(provider, model?)` — explicit model wins, else the Provider's first model, else a clear error.
+- `getChatModelForProvider(provider, opts)` — LangChain `ChatOpenAI` for OpenAI-compatible providers (openai/deepseek/local). **Anthropic chat is not wired yet** (needs `@langchain/anthropic`).
+- `getEmbeddingClientForProvider(provider)` — OpenAI SDK client for OpenAI-compatible providers.
+- Agent helpers: `getAgentProvider(agent)` and `getChatModelForAgent(agent)` build a model from an Agent's `provider` + `model`.
+
+Callers:
+- `src/lib/llm.ts` `getChatModel({ provider?, model?, temperature? })` — provider-aware; **falls back to env `DEEPSEEK_API_KEY`** when no provider is passed (keeps the blog `/api/ask` path working).
+- `src/lib/embeddings.ts` `embedTexts(texts, { provider?, model? })` — provider-aware; falls back to env `OPENAI_API_KEY` (blog path). `MOCK_EMBEDDINGS=1` short-circuits both.
+- The hardcoded `src/lib/deepseek.ts` client was removed (dead code superseded by the runtime).
+
+> Agent runtime wiring (using `getChatModelForAgent` to actually *run* a configured agent) is roadmap step 3 — see `docs/v1-open-items.md`.
+
 ### Key handling & encryption
 
 - **Resolution order** (`src/lib/provider-key.ts`): (1) `keyRef` → `process.env[keyRef]` if set/non-empty; (2) the pasted `apiKey` (already decrypted when read through Payload). Neither → clear configuration error.
@@ -46,3 +63,5 @@ Why a paired grouping: a key is only meaningful *with* its provider — an OpenA
 
 - How per-deployment providers are seeded (env-driven seed script vs. admin UI at go-live).
 - Whether pasted keys are per-deployment or per-tenant (multi-tenant).
+- Anthropic adapter (`@langchain/anthropic`) — chat currently unsupported; embeddings N/A.
+- Which Provider an Agent uses for *embeddings* when it has one Provider for chat (may need a separate embedding-provider reference or a framework default).

@@ -1,20 +1,38 @@
 import { ChatOpenAI } from '@langchain/openai'
+import type { Provider } from '@/payload-types'
+
+import { getChatModelForProvider, type ChatModelOptions } from './provider-runtime'
 
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 export const DEEPSEEK_MODEL = 'deepseek-v4-pro'
 
-// TODO(framework): model/provider config should be read from the Agent
-// record + Provider collection (docs/provider-model.md), not hardcoded env
-// constants. This getter will resolve an Agent's provider → keyRef → model.
-export function getChatModel(temperature?: number): ChatOpenAI {
+export type GetChatModelOptions = ChatModelOptions & {
+  /** Provider to use. When omitted, falls back to env DEEPSEEK_API_KEY. */
+  provider?: Provider
+}
+
+/**
+ * Builds a chat model.
+ *
+ * When a Provider is given, its type/baseUrl/key (via `keyRef` or pasted key)
+ * and model are used (docs/provider-model.md). Otherwise the env
+ * DEEPSEEK_API_KEY fallback is used (blog `/api/ask` path).
+ */
+export function getChatModel(options: GetChatModelOptions = {}): ChatOpenAI {
+  const { provider, ...rest } = options
+
+  if (provider) {
+    return getChatModelForProvider(provider, rest)
+  }
+
   return new ChatOpenAI({
     modelName: DEEPSEEK_MODEL,
     configuration: {
       baseURL: DEEPSEEK_BASE_URL,
       apiKey: process.env.DEEPSEEK_API_KEY,
     },
-    temperature,
-    streaming: true,
+    temperature: options.temperature,
+    streaming: options.streaming ?? true,
   })
 }
 
