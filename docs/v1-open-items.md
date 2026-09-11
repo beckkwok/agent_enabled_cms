@@ -20,6 +20,7 @@ Working log for building the first version (AACMS). Each entry records the decis
 - Streaming may originate from the PayloadCMS front-end, an external workflow, or a non-web channel (e.g. a WhatsApp channel later). So the **channel is application-specific**, but the **method belongs in the framework**.
 - Framework must provide: a reusable streaming method (SSE/stream abstraction) plus Chat session / Chat history storage, so any app channel can hook in.
 - App developers then choose the transport per use case (FE page, WhatsApp adapter, etc.) and call the framework method. Update `docs/building-applications.md` accordingly when the method exists.
+- **Status:** single-shot agent runtime implemented (`docs/agents.md`). Streaming agents + the framework streaming method are **not yet implemented**.
 
 ## 4. Seeding strategy (NOTED)
 

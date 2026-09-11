@@ -1,15 +1,23 @@
 import type { CollectionConfig } from 'payload'
 
 import { adminCollectionAccess } from './helpers/access'
+import { runAgentEndpoint } from '@/agents/endpoint'
 
 export const Agents: CollectionConfig = {
   slug: 'agents',
   admin: {
     useAsTitle: 'name',
     group: 'Agent',
-    defaultColumns: ['name', 'kind', 'status', 'updatedAt'],
+    defaultColumns: ['name', 'kind', 'status', 'runAccess', 'updatedAt'],
   },
   access: adminCollectionAccess,
+  endpoints: [
+    {
+      path: '/:id/run',
+      method: 'post',
+      handler: runAgentEndpoint,
+    },
+  ],
   fields: [
     {
       name: 'name',
@@ -46,6 +54,35 @@ export const Agents: CollectionConfig = {
       index: true,
       admin: {
         description: 'Active agents may be triggered; inactive agents are disabled.',
+      },
+    },
+    {
+      name: 'capabilities',
+      type: 'select',
+      hasMany: true,
+      defaultValue: [],
+      options: [
+        { label: 'Knowledge base (RAG)', value: 'knowledge' },
+      ],
+      admin: {
+        description:
+          'What the agent can do. "knowledge" retrieves context from the framework Knowledge base before answering.',
+      },
+    },
+    {
+      name: 'runAccess',
+      type: 'select',
+      required: true,
+      defaultValue: 'authenticated',
+      options: [
+        { label: 'Public (no auth)', value: 'public' },
+        { label: 'Authenticated', value: 'authenticated' },
+        { label: 'Admin only', value: 'admin' },
+      ],
+      index: true,
+      admin: {
+        description:
+          'Who may call POST /api/agents/:id/run. Use "public" for customer-facing FAQ agents; "admin" for agents that touch sensitive data.',
       },
     },
     {

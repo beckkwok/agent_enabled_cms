@@ -192,11 +192,17 @@ async function seedUsersAndAgents(payload: Payload) {
       collection: 'agents',
       data: {
         name: agentName,
-        kind: 'streaming',
+        kind: 'single-shot',
         status: 'active',
+        runAccess: 'authenticated',
+        capabilities: ['knowledge'],
         user: agentPrincipal.id,
         provider: provider.totalDocs > 0 ? (provider.docs[0].id as number) : undefined,
         model: 'deepseek-chat',
+        prompt: plainTextToLexical(
+          'You are a helpful assistant for this site. Answer questions using the provided knowledge base context. ' +
+            'If the answer is not in the context, say you are not sure. Be concise.',
+        ),
       },
       overrideAccess: true,
     })

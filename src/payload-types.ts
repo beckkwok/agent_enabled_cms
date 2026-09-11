@@ -78,8 +78,10 @@ export interface Config {
     roles: Role;
     providers: Provider;
     agents: Agent;
+    'agent-runs': AgentRun;
     'payload-mcp-api-keys': PayloadMcpApiKey;
     'payload-kv': PayloadKv;
+    'payload-jobs': PayloadJob;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
     'payload-migrations': PayloadMigration;
@@ -96,8 +98,10 @@ export interface Config {
     roles: RolesSelect<false> | RolesSelect<true>;
     providers: ProvidersSelect<false> | ProvidersSelect<true>;
     agents: AgentsSelect<false> | AgentsSelect<true>;
+    'agent-runs': AgentRunsSelect<false> | AgentRunsSelect<true>;
     'payload-mcp-api-keys': PayloadMcpApiKeysSelect<false> | PayloadMcpApiKeysSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
+    'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
     'payload-migrations': PayloadMigrationsSelect<false> | PayloadMigrationsSelect<true>;
@@ -114,7 +118,13 @@ export interface Config {
   };
   user: User | PayloadMcpApiKey;
   jobs: {
-    tasks: unknown;
+    tasks: {
+      runAgent: TaskRunAgent;
+      inline: {
+        input: unknown;
+        output: unknown;
+      };
+    };
     workflows: unknown;
   };
 }
@@ -295,18 +305,69 @@ export interface KnowledgeChunk {
 export interface ChatSession {
   id: number;
   sessionId: string;
+  /**
+   * Agent this conversation belongs to (agent-scoped chat history).
+   */
+  agent?: (number | null) | Agent;
   updatedAt: string;
   createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "chat-messages".
+ * via the `definition` "agents".
  */
-export interface ChatMessage {
+export interface Agent {
   id: number;
-  session: number | ChatSession;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
+  /**
+   * Agent display name.
+   */
+  name: string;
+  /**
+   * Single-shot runs one operation and returns a result; streaming is conversational (chatbot).
+   */
+  kind: 'single-shot' | 'streaming';
+  /**
+   * Active agents may be triggered; inactive agents are disabled.
+   */
+  status: 'active' | 'inactive';
+  /**
+   * What the agent can do. "knowledge" retrieves context from the framework Knowledge base before answering.
+   */
+  capabilities?: 'knowledge'[] | null;
+  /**
+   * Who may call POST /api/agents/:id/run. Use "public" for customer-facing FAQ agents; "admin" for agents that touch sensitive data.
+   */
+  runAccess: 'public' | 'authenticated' | 'admin';
+  /**
+   * The User principal (type Agent) this agent acts as for access control / MCP keys. The MCP access key is issued against this principal in the admin MCP → API Keys collection — never store the key itself on this record.
+   */
+  user: number | User;
+  /**
+   * Model provider used by this agent.
+   */
+  provider?: (number | null) | Provider;
+  /**
+   * Model id to use from the chosen Provider.
+   */
+  model?: string | null;
+  /**
+   * System prompt / instructions for this agent.
+   */
+  prompt?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -354,52 +415,31 @@ export interface Provider {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "agents".
+ * via the `definition` "chat-messages".
  */
-export interface Agent {
+export interface ChatMessage {
   id: number;
-  /**
-   * Agent display name.
-   */
-  name: string;
-  /**
-   * Single-shot runs one operation and returns a result; streaming is conversational (chatbot).
-   */
-  kind: 'single-shot' | 'streaming';
-  /**
-   * Active agents may be triggered; inactive agents are disabled.
-   */
-  status: 'active' | 'inactive';
-  /**
-   * The User principal (type Agent) this agent acts as for access control / MCP keys. The MCP access key is issued against this principal in the admin MCP → API Keys collection — never store the key itself on this record.
-   */
-  user: number | User;
-  /**
-   * Model provider used by this agent.
-   */
-  provider?: (number | null) | Provider;
-  /**
-   * Model id to use from the chosen Provider.
-   */
-  model?: string | null;
-  /**
-   * System prompt / instructions for this agent.
-   */
-  prompt?: {
-    root: {
-      type: string;
-      children: {
-        type: any;
-        version: number;
-        [k: string]: unknown;
-      }[];
-      direction: ('ltr' | 'rtl') | null;
-      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
-      indent: number;
-      version: number;
-    };
-    [k: string]: unknown;
-  } | null;
+  session: number | ChatSession;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "agent-runs".
+ */
+export interface AgentRun {
+  id: number;
+  agent: number | Agent;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  triggeredBy: 'api' | 'queue' | 'schedule';
+  input?: string | null;
+  output?: string | null;
+  error?: string | null;
+  session?: (number | null) | ChatSession;
+  startedAt?: string | null;
+  completedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -501,6 +541,98 @@ export interface PayloadKv {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "payload-jobs".
+ */
+export interface PayloadJob {
+  id: number;
+  /**
+   * Input data provided to the job
+   */
+  input?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  taskStatus?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  completedAt?: string | null;
+  totalTried?: number | null;
+  /**
+   * If hasError is true this job will not be retried
+   */
+  hasError?: boolean | null;
+  /**
+   * If hasError is true, this is the error that caused it
+   */
+  error?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Task execution log
+   */
+  log?:
+    | {
+        executedAt: string;
+        completedAt: string;
+        taskSlug: 'inline' | 'runAgent';
+        taskID: string;
+        input?:
+          | {
+              [k: string]: unknown;
+            }
+          | unknown[]
+          | string
+          | number
+          | boolean
+          | null;
+        output?:
+          | {
+              [k: string]: unknown;
+            }
+          | unknown[]
+          | string
+          | number
+          | boolean
+          | null;
+        state: 'failed' | 'succeeded';
+        error?:
+          | {
+              [k: string]: unknown;
+            }
+          | unknown[]
+          | string
+          | number
+          | boolean
+          | null;
+        id?: string | null;
+      }[]
+    | null;
+  taskSlug?: ('inline' | 'runAgent') | null;
+  queue?: string | null;
+  waitUntil?: string | null;
+  processing?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-locked-documents".
  */
 export interface PayloadLockedDocument {
@@ -545,6 +677,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'agents';
         value: number | Agent;
+      } | null)
+    | ({
+        relationTo: 'agent-runs';
+        value: number | AgentRun;
       } | null)
     | ({
         relationTo: 'payload-mcp-api-keys';
@@ -698,6 +834,7 @@ export interface KnowledgeChunksSelect<T extends boolean = true> {
  */
 export interface ChatSessionsSelect<T extends boolean = true> {
   sessionId?: T;
+  agent?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -750,10 +887,29 @@ export interface AgentsSelect<T extends boolean = true> {
   name?: T;
   kind?: T;
   status?: T;
+  capabilities?: T;
+  runAccess?: T;
   user?: T;
   provider?: T;
   model?: T;
   prompt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "agent-runs_select".
+ */
+export interface AgentRunsSelect<T extends boolean = true> {
+  agent?: T;
+  status?: T;
+  triggeredBy?: T;
+  input?: T;
+  output?: T;
+  error?: T;
+  session?: T;
+  startedAt?: T;
+  completedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -822,6 +978,37 @@ export interface PayloadKvSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "payload-jobs_select".
+ */
+export interface PayloadJobsSelect<T extends boolean = true> {
+  input?: T;
+  taskStatus?: T;
+  completedAt?: T;
+  totalTried?: T;
+  hasError?: T;
+  error?: T;
+  log?:
+    | T
+    | {
+        executedAt?: T;
+        completedAt?: T;
+        taskSlug?: T;
+        taskID?: T;
+        input?: T;
+        output?: T;
+        state?: T;
+        error?: T;
+        id?: T;
+      };
+  taskSlug?: T;
+  queue?: T;
+  waitUntil?: T;
+  processing?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-locked-documents_select".
  */
 export interface PayloadLockedDocumentsSelect<T extends boolean = true> {
@@ -861,6 +1048,23 @@ export interface CollectionsWidget {
     [k: string]: unknown;
   };
   width: 'full';
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "TaskRunAgent".
+ */
+export interface TaskRunAgent {
+  input: {
+    agentId: number;
+    input: string;
+    sessionId?: string | null;
+    runId?: number | null;
+  };
+  output: {
+    runId?: number | null;
+    sessionId?: string | null;
+    output?: string | null;
+  };
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

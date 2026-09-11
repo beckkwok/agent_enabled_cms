@@ -10,6 +10,7 @@ import { Users } from './collections/Users'
 import { Roles } from './collections/Roles'
 import { Providers } from './collections/Providers'
 import { Agents } from './collections/Agents'
+import { AgentRuns } from './collections/AgentRuns'
 import { Media } from './collections/Media'
 import { BlogPosts } from './collections/BlogPosts'
 import { Knowledge } from './collections/Knowledge'
@@ -18,6 +19,7 @@ import { ChatSession } from './collections/ChatSession'
 import { ChatMessage } from './collections/ChatMessage'
 import { pgVectorSchemaHook } from './collections/helpers/pgvector'
 import { ensureSearchTsvColumn } from './collections/helpers/searchTsv'
+import { runAgentTask } from './jobs/runAgent'
 import { migrations } from './migrations'
 
 const filename = fileURLToPath(import.meta.url)
@@ -30,11 +32,33 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
   },
-  collections: [Users, Media, BlogPosts, Knowledge, KnowledgeChunk, ChatSession, ChatMessage, Roles, Providers, Agents],
+  collections: [Users, Media, BlogPosts, Knowledge, KnowledgeChunk, ChatSession, ChatMessage, Roles, Providers, Agents, AgentRuns],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),
+  },
+  jobs: {
+    tasks: [
+      {
+        slug: 'runAgent',
+        label: 'Run agent',
+        inputSchema: [
+          { name: 'agentId', type: 'number', required: true },
+          { name: 'input', type: 'textarea', required: true },
+          { name: 'sessionId', type: 'text' },
+          { name: 'runId', type: 'number' },
+        ],
+        outputSchema: [
+          { name: 'runId', type: 'number' },
+          { name: 'sessionId', type: 'text' },
+          { name: 'output', type: 'textarea' },
+        ],
+        handler: runAgentTask,
+      },
+    ],
+    // Process queued jobs in-process. Tune/replace with an external worker as needed.
+    autoRun: [{ cron: '* * * * *', queue: 'default' }],
   },
   db: postgresAdapter({
     pool: {

@@ -4,7 +4,7 @@ export const ChatSession: CollectionConfig = {
   slug: 'chat-sessions',
   admin: {
     useAsTitle: 'sessionId',
-    defaultColumns: ['sessionId', 'createdAt'],
+    defaultColumns: ['sessionId', 'agent', 'createdAt'],
     group: 'Chat',
   },
   access: {
@@ -19,6 +19,15 @@ export const ChatSession: CollectionConfig = {
       type: 'text',
       required: true,
       unique: true,
+    },
+    {
+      name: 'agent',
+      type: 'relationship',
+      relationTo: 'agents',
+      index: true,
+      admin: {
+        description: 'Agent this conversation belongs to (agent-scoped chat history).',
+      },
     },
   ],
 }

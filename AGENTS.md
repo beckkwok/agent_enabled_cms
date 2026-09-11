@@ -147,6 +147,7 @@ Two shapes to support:
 - `AGENTS.md` — this file (agent/coder guidance).
 - `docs/` — design & scenario notes:
   - `docs/development.md` — testing rules/layout (unit + agent ↔ CMS e2e).
+  - `docs/agents.md` — agent runtime, run endpoint, queue, AgentRun trace.
   - `docs/mcp-connectivity.md` — MCP access-control model and agent-API-key design decision.
   - `docs/provider-model.md` — Provider collection (provider + API key + model pairing), multi-provider support.
   - `docs/retrieval.md` — hybrid (RRF) vector search decision and RAG × access-control open item.

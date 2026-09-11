@@ -37,3 +37,12 @@ export const adminCollectionAccess: CollectionAccess = {
   update: isAdmin,
   delete: isAdmin,
 }
+
+// Strictly Admin-only for every operation (e.g. system trace collections).
+// System writes still work via local API with `overrideAccess: true`.
+export const adminOnlyAccess: CollectionAccess = {
+  create: isAdmin,
+  read: isAdmin,
+  update: isAdmin,
+  delete: isAdmin,
+}
