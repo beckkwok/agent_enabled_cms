@@ -38,7 +38,14 @@ Skills are the CMS operations agents (and external MCP clients) may call. The sa
 1. **Agent tools** — an agent's `tools` are bound as LangChain tools during a run (`skills/langchain.ts` → `buildAgentTools`), and the model calls them in the tool loop.
 2. **MCP custom tools** — the registry is registered in `payload.config.ts` under `mcp.tools`, callable by any MCP client with a key (per-key tool toggles in **MCP → API Keys**).
 
-**Access control:** every skill runs with `overrideAccess: false` and `user` = the acting principal (the agent's `User` principal for runs, or the MCP key owner). Payload collection access rules therefore gate every skill call — the trust boundary is never bypassed. Skills must not use `overrideAccess: true`.
+**Access control — two distinct layers:**
+
+1. **Skill invocation** (who may call a skill): controlled by the admin-configured `Agent.tools` (runs) and the per-key MCP tool toggles (`payload_mcp_tool_*`). This is *not* currently role-aware — there is no per-role skill authorization yet.
+2. **Skill data** (what a skill may return/change): skills call Payload with `overrideAccess: false` + `user` = the acting principal (the agent's `User` principal for runs, or the MCP key owner). Collection `access` rules therefore gate every Payload read/write. Skills must not use `overrideAccess: true`.
+
+**Exception / known gap:** `searchKnowledge` calls `hybridSearch`, which runs **raw SQL with no access filter** — so retrieval is **not** limited by the caller's rights. See `docs/retrieval.md` ("RAG × access control"). The other three skills (`listContent`, `getContent`, `countContent`) go through Payload and *are* access-limited.
+
+> Also note the current collection rules are coarse (user-*type* based: `publicCollectionAccess` / `privateCollectionAccess`), and `User.role` is not consulted anywhere yet. Fine-grained role gating for skills and data is a follow-up (see `docs/v1-open-items.md`).
 
 **Framework skills (v1):**
 

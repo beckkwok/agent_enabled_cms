@@ -124,3 +124,17 @@ Enhancement: make the plaintext never reach the browser.
 - Verify `Provider` reads via MCP/REST never expose plaintext for non-Admins (already blocked by field access, but re-check with the sentinel approach).
 
 Status: **open enhancement** — current masking is presentational only. See also #9 (credential leakage).
+
+## 11. Role-based authorization for skills and data (OPEN)
+
+Two access layers exist and only one is currently role-aware (see `docs/agents.md`):
+
+1. **Skill invocation** — gated by `Agent.tools` + per-key MCP tool toggles. **Not** role-aware: there is no check like "only Admin agents may call `countContent`".
+2. **Skill data** — skills call Payload with `overrideAccess: false` + `user`, so collection access rules apply. But those rules are coarse (user-*type* based: `publicCollectionAccess` / `privateCollectionAccess`); the `User.role` relationship is not consulted anywhere yet.
+
+Gaps to resolve:
+- **Per-role skill gating** — add a check (e.g. a `skill.access` predicate or `requiredRoles` on each skill) that consults the acting user's `type`/`role` before running, so sensitive skills are Admin-only even when the tool is enabled.
+- **Role-aware data rules** — make collection `access` functions consult `User.role` (and/or a `Role`→permissions model) instead of just "authenticated".
+- **`searchKnowledge` bypasses access entirely** (raw SQL) — see #6 / `docs/retrieval.md`.
+
+Status: **open** — design the role model first (what a `Role` grants), then apply it consistently to both skill invocation and data access.
