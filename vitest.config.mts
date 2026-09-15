@@ -8,5 +8,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     include: ['tests/unit/**/*.unit.spec.ts', 'tests/int/**/*.int.spec.ts'],
+    // Integration tests share one Postgres instance — run files serially.
+    fileParallelism: false,
   },
 })

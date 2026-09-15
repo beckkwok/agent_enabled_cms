@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
 
 import { adminCollectionAccess } from './helpers/access'
 import { runAgentEndpoint } from '@/agents/endpoint'
+import { SKILLS } from '@/agents/skills'
 
 export const Agents: CollectionConfig = {
   slug: 'agents',
@@ -67,6 +68,20 @@ export const Agents: CollectionConfig = {
       admin: {
         description:
           'What the agent can do. "knowledge" retrieves context from the framework Knowledge base before answering.',
+      },
+    },
+    {
+      name: 'tools',
+      type: 'select',
+      hasMany: true,
+      defaultValue: [],
+      options: Object.values(SKILLS).map((skill) => ({
+        label: skill.name,
+        value: skill.name,
+      })),
+      admin: {
+        description:
+          'CMS skills the agent may call during a run. Calls run as the agent principal, so access rules apply.',
       },
     },
     {

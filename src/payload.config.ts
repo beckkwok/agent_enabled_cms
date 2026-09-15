@@ -20,6 +20,7 @@ import { ChatMessage } from './collections/ChatMessage'
 import { pgVectorSchemaHook } from './collections/helpers/pgvector'
 import { ensureSearchTsvColumn } from './collections/helpers/searchTsv'
 import { runAgentTask } from './jobs/runAgent'
+import { SKILLS } from './agents/skills'
 import { migrations } from './migrations'
 
 const filename = fileURLToPath(import.meta.url)
@@ -106,6 +107,25 @@ export default buildConfig({
           },
         },
         agents: { enabled: { find: true } },
+      },
+      // Expose framework skills as MCP custom tools. The handler receives the
+      // API-key owner as req.user, so skill calls inherit their access rules.
+      mcp: {
+        tools: Object.values(SKILLS).map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          parameters: skill.parameters,
+          handler: async (args: Record<string, unknown>, req) => ({
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(
+                  await skill.handler(args, { payload: req.payload, user: req.user }),
+                ),
+              },
+            ],
+          }),
+        })),
       },
     }),
   ],

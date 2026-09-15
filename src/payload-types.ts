@@ -335,6 +335,10 @@ export interface Agent {
    */
   capabilities?: 'knowledge'[] | null;
   /**
+   * CMS skills the agent may call during a run. Calls run as the agent principal, so access rules apply.
+   */
+  tools?: ('searchKnowledge' | 'listContent' | 'getContent' | 'countContent')[] | null;
+  /**
    * Who may call POST /api/agents/:id/run. Use "public" for customer-facing FAQ agents; "admin" for agents that touch sensitive data.
    */
   runAccess: 'public' | 'authenticated' | 'admin';
@@ -514,6 +518,24 @@ export interface PayloadMcpApiKey {
      * Allow clients to find agents.
      */
     find?: boolean | null;
+  };
+  'payload-mcp-tool'?: {
+    /**
+     * Search the site knowledge base for relevant information. Use this to answer questions about the site or its content.
+     */
+    searchKnowledge?: boolean | null;
+    /**
+     * List published blog posts with their title, slug and excerpt.
+     */
+    listContent?: boolean | null;
+    /**
+     * Get a published blog post by its slug.
+     */
+    getContent?: boolean | null;
+    /**
+     * Count published blog posts (reporting example).
+     */
+    countContent?: boolean | null;
   };
   updatedAt: string;
   createdAt: string;
@@ -888,6 +910,7 @@ export interface AgentsSelect<T extends boolean = true> {
   kind?: T;
   status?: T;
   capabilities?: T;
+  tools?: T;
   runAccess?: T;
   user?: T;
   provider?: T;
@@ -961,6 +984,14 @@ export interface PayloadMcpApiKeysSelect<T extends boolean = true> {
     | T
     | {
         find?: T;
+      };
+  'payload-mcp-tool'?:
+    | T
+    | {
+        searchKnowledge?: T;
+        listContent?: T;
+        getContent?: T;
+        countContent?: T;
       };
   updatedAt?: T;
   createdAt?: T;

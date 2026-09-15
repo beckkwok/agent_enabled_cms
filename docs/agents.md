@@ -12,6 +12,7 @@ An agent is **two rows**: its `Agent` config row plus a `User` principal of type
 | `kind` | `single-shot` (implemented) or `streaming` (next). |
 | `status` | `active` / `inactive` — inactive agents refuse runs. |
 | `capabilities` | `knowledge` → retrieve context from the `Knowledge` base before answering. |
+| `tools` | CMS skills the agent may call during a run (see below). |
 | `runAccess` | Who may call the run endpoint: `public` / `authenticated` (default) / `admin`. |
 | `user` | The `User` principal (type `Agent`) the agent acts as; its MCP key is issued against this principal. |
 | `provider` | `Provider` record used for the model. |
@@ -20,15 +21,37 @@ An agent is **two rows**: its `Agent` config row plus a `User` principal of type
 
 ## Runtime (`src/agents/`)
 
-- `run.ts` — `runSingleShot({ payload, agentId, input, sessionId?, triggeredBy?, runId? })`:
+- `run.ts` — `runSingleShot({ payload, agentId, input, sessionId?, triggeredBy?, runId?, model? })`:
   1. loads the agent (provider populated),
   2. if `capabilities` includes `knowledge`, retrieves context via the framework hybrid RRF search (`src/lib/vectorSearch.ts`),
-  3. builds the system prompt (`prompt.ts`) + context, then invokes the model,
+  3. builds the system prompt (`prompt.ts`) + context, binds the agent's `tools` as callable skills, and runs a tool-calling loop (max 5 iterations) until the model returns a final answer,
   4. persists an agent-scoped `ChatSession` + `ChatMessage`s,
   5. writes an `AgentRun` trace (status/input/output/timing), and marks it `failed` on error.
 - `model.ts` — `resolveAgentModel(agent)`: builds the chat model from the agent's Provider via `getChatModelForAgent` (`src/lib/provider-runtime.ts`). `MOCK_LLM=1` returns a `FakeListChatModel` for tests (no network/keys).
 - `access.ts` — `checkAgentRunAccess(agent, req)` enforces `runAccess`.
 - `prompt.ts` — `agentPromptToText(prompt)` extracts plain text from the rich-text prompt.
+
+## Skills / tools (`src/agents/skills/`)
+
+Skills are the CMS operations agents (and external MCP clients) may call. The same implementation is exposed two ways, so access control is identical:
+
+1. **Agent tools** — an agent's `tools` are bound as LangChain tools during a run (`skills/langchain.ts` → `buildAgentTools`), and the model calls them in the tool loop.
+2. **MCP custom tools** — the registry is registered in `payload.config.ts` under `mcp.tools`, callable by any MCP client with a key (per-key tool toggles in **MCP → API Keys**).
+
+**Access control:** every skill runs with `overrideAccess: false` and `user` = the acting principal (the agent's `User` principal for runs, or the MCP key owner). Payload collection access rules therefore gate every skill call — the trust boundary is never bypassed. Skills must not use `overrideAccess: true`.
+
+**Framework skills (v1):**
+
+| Skill | What it does |
+| --- | --- |
+| `searchKnowledge` | Hybrid RRF search over the Knowledge base. |
+| `listContent` | List published blog posts (title/slug/excerpt). |
+| `getContent` | Get a published post by slug. |
+| `countContent` | Count published posts (reporting example). |
+
+> `searchKnowledge` currently runs in a trusted context — retrieval does not yet filter by the caller's Document access rules (`docs/retrieval.md` #6).
+>
+> Application projects register their own skills by extending `SKILLS` in `src/agents/skills/index.ts` (per `docs/building-applications.md`).
 
 ## Run endpoint
 
@@ -58,13 +81,12 @@ One row per run: `agent`, `status` (`queued`/`running`/`succeeded`/`failed`), `t
 ## Testing
 
 - `MOCK_EMBEDDINGS=1` → deterministic vectors; `MOCK_LLM=1` → fake chat model.
-- Unit: `tests/unit/agent-access.unit.spec.ts`, `agent-prompt.unit.spec.ts`.
-- Integration: `tests/int/agent-run.int.spec.ts` — runs an agent, asserts `AgentRun` + `ChatMessage`s, and exercises the queue task.
+- Unit: `tests/unit/agent-access.unit.spec.ts`, `agent-prompt.unit.spec.ts`, `skills.unit.spec.ts`.
+- Integration: `tests/int/agent-run.int.spec.ts` — runs an agent, asserts `AgentRun` + `ChatMessage`s, and exercises the queue task; `tests/int/agent-tools.int.spec.ts` — the tool-calling loop with a scripted model.
 - e2e: `tests/e2e/agent-run.e2e.spec.ts` — HTTP boundary (validation, 401 for authenticated agents, MCP keyless 401).
 
 ## Not yet implemented
 
 - **Streaming** agents + the framework streaming method (`docs/v1-open-items.md` #3).
-- **Agent tools / CMS skills** via MCP custom tools.
 - **RAG × access control** (`docs/retrieval.md` #6) — retrieval currently runs in a trusted/admin context.
 - **Agent safety / red-team** (`docs/v1-open-items.md` #9).

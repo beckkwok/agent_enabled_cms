@@ -1,12 +1,22 @@
 import { randomUUID } from 'node:crypto'
-import { HumanMessage, SystemMessage } from '@langchain/core/messages'
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+  type BaseMessage,
+} from '@langchain/core/messages'
+import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { Payload } from 'payload'
-import type { Agent, AgentRun } from '@/payload-types'
+import type { Agent, AgentRun, User } from '@/payload-types'
 
 import { hybridSearch } from '@/lib/vectorSearch'
+import type { AgentWithProvider } from '@/lib/provider-runtime'
 import { agentPromptToText } from './prompt'
 import { resolveAgentModel } from './model'
-import type { AgentWithProvider } from '@/lib/provider-runtime'
+import { buildAgentTools } from './skills/langchain'
+import type { SkillContext } from './skills/types'
 
 export type RunTrigger = NonNullable<AgentRun['triggeredBy']>
 
@@ -18,6 +28,8 @@ export type RunSingleShotArgs = {
   triggeredBy?: RunTrigger
   /** When set, updates an existing AgentRun (e.g. one created by the API as queued). */
   runId?: number
+  /** Test seam: override the chat model (e.g. a fake tool-calling model). */
+  model?: BaseChatModel
 }
 
 export type RunSingleShotResult = {
@@ -25,6 +37,8 @@ export type RunSingleShotResult = {
   output: string
   sessionId: string
 }
+
+const MAX_TOOL_ITERATIONS = 5
 
 function contentToText(content: unknown): string {
   if (typeof content === 'string') return content
@@ -73,12 +87,47 @@ async function resolveSession(
   return { id: created.id, sessionId: created.sessionId }
 }
 
+/** Runs the model, executing any tool calls, until it returns a final answer. */
+async function runWithTools(
+  model: { invoke: (input: BaseMessage[]) => Promise<BaseMessage> },
+  messages: BaseMessage[],
+  tools: StructuredToolInterface[],
+): Promise<BaseMessage> {
+  let response = await model.invoke(messages)
+  let iterations = 0
+
+  while ((response as AIMessage).tool_calls?.length && iterations < MAX_TOOL_ITERATIONS) {
+    const toolCalls = (response as AIMessage).tool_calls ?? []
+    messages.push(response)
+    for (const call of toolCalls) {
+      let result: unknown
+      try {
+        const found = tools.find((t) => t.name === call.name)
+        result = found ? await found.invoke(call.args) : { error: `Unknown tool: ${call.name}` }
+      } catch (err) {
+        result = { error: err instanceof Error ? err.message : String(err) }
+      }
+      messages.push(
+        new ToolMessage({
+          content: typeof result === 'string' ? result : JSON.stringify(result),
+          tool_call_id: call.id ?? call.name,
+          name: call.name,
+        }),
+      )
+    }
+    response = await model.invoke(messages)
+    iterations += 1
+  }
+
+  return response
+}
+
 /**
  * Runs an agent once (single-shot) and records an AgentRun trace.
  *
- * For agents with the `knowledge` capability, the input is used to retrieve
- * context from the framework Knowledge base (hybrid RRF search) before the
- * model call.
+ * - `knowledge` capability → retrieve context from the framework Knowledge base.
+ * - `tools` → bind the selected CMS skills so the model can call them; the
+ *   agent acts as its own principal, so skill reads/writes are access-controlled.
  */
 export async function runSingleShot({
   payload,
@@ -87,13 +136,14 @@ export async function runSingleShot({
   sessionId,
   triggeredBy = 'api',
   runId,
+  model: modelOverride,
 }: RunSingleShotArgs): Promise<RunSingleShotResult> {
   const agent = (await payload.findByID({
     collection: 'agents',
     id: agentId,
     depth: 1,
     overrideAccess: true,
-  })) as unknown as AgentWithProvider
+  })) as unknown as AgentWithProvider & { user?: number | User }
 
   const startedAt = new Date().toISOString()
 
@@ -111,7 +161,6 @@ export async function runSingleShot({
       })
 
   try {
-    // Build context for knowledge-capable agents.
     const capabilities = agent.capabilities ?? []
     let context = ''
     if (capabilities.includes('knowledge')) {
@@ -123,13 +172,25 @@ export async function runSingleShot({
     if (context) systemParts.push(`Context:\n${context}`)
     const systemContent = systemParts.filter(Boolean).join('\n\n')
 
-    const model = resolveAgentModel(agent)
-    const messages = [
+    // Skills run as the agent's principal so Payload access rules apply.
+    const actingUser = agent.user && typeof agent.user === 'object' ? agent.user : null
+    const skillCtx: SkillContext = { payload, user: actingUser }
+    const tools = buildAgentTools(agent.tools ?? [], skillCtx)
+
+    const baseModel = modelOverride ?? resolveAgentModel(agent)
+    const model =
+      tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
+
+    const messages: BaseMessage[] = [
       ...(systemContent ? [new SystemMessage(systemContent)] : []),
       new HumanMessage(input),
     ]
 
-    const response = await model.invoke(messages)
+    const response = await runWithTools(
+      model as unknown as { invoke: (input: BaseMessage[]) => Promise<BaseMessage> },
+      messages,
+      tools,
+    )
     const output = contentToText(response.content)
 
     const session = await resolveSession(payload, agentId, sessionId)
