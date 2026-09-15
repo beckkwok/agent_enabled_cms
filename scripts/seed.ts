@@ -196,6 +196,7 @@ async function seedUsersAndAgents(payload: Payload) {
         status: 'active',
         runAccess: 'authenticated',
         capabilities: ['knowledge'],
+        tools: ['searchKnowledge', 'listContent', 'getContent', 'countContent'],
         user: agentPrincipal.id,
         provider: provider.totalDocs > 0 ? (provider.docs[0].id as number) : undefined,
         model: 'deepseek-chat',
