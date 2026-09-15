@@ -17,7 +17,7 @@ Add new collections, globals, tools, prompts, agents, and queue jobs **alongside
 
 - Company-specific collections (e.g. `Menu`, `Order`, `Quotation`) in the **CMS / application group**, each with explicit `access` rules keyed to `User`/`Admin`/`Agent` roles.
 - New `Agent` documents (data rows) for your business flows — single-shot or streaming.
-- Custom MCP tools/resources/prompts that implement your business skills (write transaction, read, calculation/reporting), always passing `req` with `overrideAccess: false` + `user: req.user`.
+- Custom **skills** that implement your business operations (write transaction, read, calculation/reporting) — authored as `Skill`s and registered in the skill registry, which exposes them as both agent tools and MCP custom tools. See "Writing skills" below.
 - Queue jobs that trigger your agents and write status/results back through collections.
 - Web views / front-end routes that display your data; register them in PayloadCMS.
 - e2e tests for your agent ↔ CMS paths.
@@ -40,12 +40,89 @@ Payload collections are **static and code-defined** — there is no runtime/admi
 - **Every schema change is a code + migration step.** After adding/altering a collection, run `payload generate:types` (regenerate TS types) and create a DB migration (see the `blog` repo pattern: `src/migrations/*`, drizzle `afterSchemaInit` hooks for extensions like the pgvector column). Apps inherit this discipline — new app collections ship with their own migrations.
 - **Consequence for "no-code" expectations:** an end user cannot add tables from the admin UI. If an app needs per-tenant custom fields at run time, model them as flexible data within a framework-owned collection (e.g. a JSON/block field), not as new tables.
 
+## Writing skills (agent tools / MCP tools)
+
+**Skills are how your application exposes operations to agents.** A skill is a small, single-purpose function that reads or writes your collections through Payload — and the framework turns it into *both* an agent tool (callable during a run) and an MCP custom tool (callable by external MCP clients). You write it once; access control is identical in both paths.
+
+### 1. Define a skill
+
+Create a file under your app's skills folder (framework skills live in `src/agents/skills/`):
+
+```ts
+import { z } from 'zod'
+import type { Skill } from '@/agents/skills/types'
+
+export const createQuotation: Skill = {
+  name: 'createQuotation',              // also the MCP tool name + Agent.tools value
+  description: 'Create a quotation for a customer with line items.', // model-facing: be precise
+  parameters: {
+    customerId: z.number().describe('The customer id.'),
+    items: z.array(z.object({ sku: z.string(), qty: z.number() })).describe('Line items.'),
+  },
+  handler: async (args, ctx) => {
+    // ctx.payload = Payload instance, ctx.user = the acting principal
+    const quotation = await ctx.payload.create({
+      collection: 'quotations',
+      data: { customer: args.customerId, items: args.items, status: 'draft' },
+      overrideAccess: false,   // MUST stay false — access rules must apply
+      user: ctx.user,          // acts as the agent principal / MCP key owner
+    })
+    return { id: quotation.id, total: quotation.total }
+  },
+}
+```
+
+### 2. Register it
+
+Add it to the `SKILLS` registry (`src/agents/skills/index.ts`):
+
+```ts
+export const SKILLS = {
+  ...,
+  [createQuotation.name]: createQuotation,
+}
+```
+
+Registering is all that's needed — the framework then:
+- lists it in the `Agent.tools` selector (admin → Agents),
+- registers it as an MCP custom tool (per-key toggles in **MCP → API Keys**),
+- makes it callable by the model in the agent run tool loop.
+
+### 3. Rules (non-negotiable)
+
+- **Always `overrideAccess: false` + `user: ctx.user`.** Never bypass access control. The skill runs as the acting principal, so your collection `access` rules gate it.
+- **Single-purpose, small handlers.** One operation per skill; return JSON-serializable data.
+- **No secrets, no over-sharing.** Never return data the caller cannot read; never include provider keys or PII.
+- **Write a strong `description`** — it's the model's primary signal for choosing the tool.
+- **Validate/limit inputs** (bounds on `limit`, etc.).
+- **Do not use `overrideAccess: true`** except in genuinely system-generated writes.
+
+### 4. Enabling a skill for an agent
+
+Skills are opt-in per agent via the `Agent.tools` field, and per MCP key via the key's tool toggles. An agent can only call skills it has selected; an MCP client only the ones its key allows.
+
+### 5. Schema/migration note (important)
+
+Skills are stored as a Postgres **enum** (`enum_agents_tools`) and as MCP key toggle columns. **Adding or removing a skill changes the schema**, so after editing the registry run:
+
+```bash
+payload generate:types
+payload migrate:create
+```
+
+and commit the migration. Removing a skill that an `Agent` still references will drop it from that agent.
+
+### 6. Test it
+
+- **Unit**: call `skill.handler(args, { payload, user })` and assert it passes `overrideAccess: false` + `user` (see `tests/unit/skills.unit.spec.ts`).
+- **Integration**: run an agent with the skill via a scripted model (`tests/int/agent-tools.int.spec.ts`) and assert the `AgentRun` + result.
+
 ## Working procedure for application developers
 
-1. Read `AGENTS.md`, `docs/development.md`, `docs/mcp-connectivity.md`, `docs/retrieval.md`, `docs/provider-model.md`.
+1. Read `AGENTS.md`, `docs/development.md`, `docs/agents.md`, `docs/mcp-connectivity.md`, `docs/retrieval.md`, `docs/provider-model.md`.
 2. Model your company data as new collections with explicit access rules.
 3. Model your agents as `Agent` records; configure provider/model via the `Provider` collection.
-4. Expose business operations as MCP tools (skills); keep them single-purpose.
+4. Write the skills your agents need (see "Writing skills" above) and select them on the agent's `tools`.
 5. Write unit tests for any logic and e2e tests for each agent ↔ CMS path (see `docs/development.md`).
 6. Never store provider keys in collections — reference env/secrets.
 7. Verify nothing in the framework-owned list above was modified before you consider the work done.

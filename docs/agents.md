@@ -60,7 +60,7 @@ All four skills are access-limited: `listContent`/`getContent`/`countContent` go
 
 > `searchKnowledge` is access-scoped: retrieval resolves the caller's allowed Knowledge ids via the access layer before the SQL search (`docs/retrieval.md`).
 >
-> Application projects register their own skills by extending `SKILLS` in `src/agents/skills/index.ts` (per `docs/building-applications.md`); they are automatically exposed both as agent tools and as MCP custom tools.
+> Application projects register their own skills by extending `SKILLS` in `src/agents/skills/index.ts` — see **`docs/building-applications.md` → "Writing skills"** for the authoring guide (define, register, rules, migration, tests). They are automatically exposed both as agent tools and as MCP custom tools.
 
 ## Run endpoint
 
