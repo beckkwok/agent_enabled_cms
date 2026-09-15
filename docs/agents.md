@@ -42,16 +42,18 @@ Skills are the CMS operations agents (and external MCP clients) may call. The sa
 
 **Framework skills (v1):**
 
-| Skill | What it does |
-| --- | --- |
-| `searchKnowledge` | Hybrid RRF search over the Knowledge base. |
-| `listContent` | List published blog posts (title/slug/excerpt). |
-| `getContent` | Get a published post by slug. |
-| `countContent` | Count published posts (reporting example). |
+| MCP tool / skill name | Parameters (Zod) | Returns |
+| --- | --- | --- |
+| `searchKnowledge` | `query: string`, `limit?: number` (default 5, max 20) | `{ results: [{ content, similarity }] }` — hybrid RRF excerpts from the Knowledge base |
+| `listContent` | `limit?: number` (default 10, max 50) | `{ posts: [{ title, slug, excerpt, publishedDate }] }` — published posts, newest first |
+| `getContent` | `slug: string` | `{ post: { … } \| null }` — a single published post |
+| `countContent` | *(none)* | `{ totalDocs: number }` — count of published posts |
+
+**Exposed over MCP:** all four are registered as MCP custom tools (`mcp.tools`) and appear in `tools/list` for any MCP client with a valid API key. Each key can enable/disable them individually under **MCP → API Keys** (the `payload_mcp_tool_*` toggles). See `docs/mcp-connectivity.md`.
 
 > `searchKnowledge` currently runs in a trusted context — retrieval does not yet filter by the caller's Document access rules (`docs/retrieval.md` #6).
 >
-> Application projects register their own skills by extending `SKILLS` in `src/agents/skills/index.ts` (per `docs/building-applications.md`).
+> Application projects register their own skills by extending `SKILLS` in `src/agents/skills/index.ts` (per `docs/building-applications.md`); they are automatically exposed both as agent tools and as MCP custom tools.
 
 ## Run endpoint
 

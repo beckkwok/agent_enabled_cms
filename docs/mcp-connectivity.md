@@ -30,6 +30,19 @@ Per the docs: access controls are enforced at the Payload level **using the user
 - `overrideResponse` → sanitize fields before the model sees them.
 - Hooks can branch on `req.payloadAPI === 'MCP'`.
 
+## Custom skill tools exposed over MCP (v1)
+
+In addition to the collection/global CRUD tools, AACMS registers framework **skill tools** via `mcp.tools` (see `src/agents/skills/`, documented in `docs/agents.md`). They appear in MCP `tools/list` and can be toggled per key.
+
+| MCP tool name | Parameters | Returns |
+| --- | --- | --- |
+| `searchKnowledge` | `query: string`, `limit?: number` | `{ results: [{ content, similarity }] }` |
+| `listContent` | `limit?: number` | `{ posts: [{ title, slug, excerpt, publishedDate }] }` |
+| `getContent` | `slug: string` | `{ post: {…} \| null }` |
+| `countContent` | *(none)* | `{ totalDocs: number }` |
+
+Each tool handler receives `(args, req)` and runs the skill with `{ payload: req.payload, user: req.user }` using `overrideAccess: false`, so the API-key owner's access rules gate the call. Per-key allow/disallow lives in the **MCP → API Keys** collection (`payload_mcp_tool_*` fields).
+
 ## Decision: agent API-key policy (recorded for implementation)
 
 - **One API key per agent** — best flexibility and clean audit identity per agent (conversations/tool calls attributable to a single key owner).
