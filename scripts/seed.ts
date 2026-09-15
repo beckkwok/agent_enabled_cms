@@ -338,10 +338,13 @@ async function seedSampleContent(payload: Payload) {
     }
   }
 
-  // --- Private: knowledge (RAG sources) ---
+  // --- Knowledge (RAG sources) ---
+  // Sample docs are `public` so the blog chatbot and agents both work. In a
+  // real deployment, scope internal corpora to `authenticated`/`role`/`private`.
   const knowledgeDocs = [
     {
       title: 'AACMS — Framework Overview',
+      visibility: 'public' as const,
       content: [
         'AACMS is an agent-enabled content management system built on Payload CMS, Next.js, PostgreSQL and LangChain.js.',
         'The architecture has three layers: agents live in an embedded LangChain.js runtime, the application tier is Payload CMS (collections, access control, REST, MCP, queue), and PostgreSQL is the single source of truth.',
@@ -350,6 +353,7 @@ async function seedSampleContent(payload: Payload) {
     },
     {
       title: 'Retrieval — Hybrid Search',
+      visibility: 'public' as const,
       content: [
         'Vector search in AACMS is hybrid: Postgres full-text search and pgvector cosine similarity are fused with Reciprocal Rank Fusion.',
         'Documents are indexed for retrieval-augmented generation; chunks are embedded and stored in Postgres alongside the content they came from.',

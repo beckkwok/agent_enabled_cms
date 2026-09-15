@@ -162,9 +162,12 @@ export async function runSingleShot({
 
   try {
     const capabilities = agent.capabilities ?? []
+    // Skills/retrieval run as the agent's principal so access rules apply.
+    const actingUser = agent.user && typeof agent.user === 'object' ? agent.user : null
+
     let context = ''
     if (capabilities.includes('knowledge')) {
-      const matches = await hybridSearch(payload, input, { limit: 5 })
+      const matches = await hybridSearch(payload, input, { limit: 5, user: actingUser })
       context = matches.map((m, i) => `[${i + 1}] ${m.content}`).join('\n\n')
     }
 
@@ -172,8 +175,6 @@ export async function runSingleShot({
     if (context) systemParts.push(`Context:\n${context}`)
     const systemContent = systemParts.filter(Boolean).join('\n\n')
 
-    // Skills run as the agent's principal so Payload access rules apply.
-    const actingUser = agent.user && typeof agent.user === 'object' ? agent.user : null
     const skillCtx: SkillContext = { payload, user: actingUser }
     const tools = buildAgentTools(agent.tools ?? [], skillCtx)
 

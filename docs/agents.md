@@ -40,10 +40,10 @@ Skills are the CMS operations agents (and external MCP clients) may call. The sa
 
 **Access control — two distinct layers:**
 
-1. **Skill invocation** (who may call a skill): controlled by the admin-configured `Agent.tools` (runs) and the per-key MCP tool toggles (`payload_mcp_tool_*`). This is *not* currently role-aware — there is no per-role skill authorization yet.
+1. **Skill invocation** (who may call a skill): controlled by the admin-configured `Agent.tools` (runs) and the per-key MCP tool toggles (`payload_mcp_tool_*`). This is *not* currently role-aware — there is no per-role skill authorization yet (`docs/v1-open-items.md` #11).
 2. **Skill data** (what a skill may return/change): skills call Payload with `overrideAccess: false` + `user` = the acting principal (the agent's `User` principal for runs, or the MCP key owner). Collection `access` rules therefore gate every Payload read/write. Skills must not use `overrideAccess: true`.
 
-**Exception / known gap:** `searchKnowledge` calls `hybridSearch`, which runs **raw SQL with no access filter** — so retrieval is **not** limited by the caller's rights. See `docs/retrieval.md` ("RAG × access control"). The other three skills (`listContent`, `getContent`, `countContent`) go through Payload and *are* access-limited.
+All four skills are access-limited: `listContent`/`getContent`/`countContent` go through Payload directly, and `searchKnowledge` scopes retrieval to the Knowledge ids the caller may read (`docs/retrieval.md`, design A+B).
 
 > Also note the current collection rules are coarse (user-*type* based: `publicCollectionAccess` / `privateCollectionAccess`), and `User.role` is not consulted anywhere yet. Fine-grained role gating for skills and data is a follow-up (see `docs/v1-open-items.md`).
 
@@ -58,7 +58,7 @@ Skills are the CMS operations agents (and external MCP clients) may call. The sa
 
 **Exposed over MCP:** all four are registered as MCP custom tools (`mcp.tools`) and appear in `tools/list` for any MCP client with a valid API key. Each key can enable/disable them individually under **MCP → API Keys** (the `payload_mcp_tool_*` toggles). See `docs/mcp-connectivity.md`.
 
-> `searchKnowledge` currently runs in a trusted context — retrieval does not yet filter by the caller's Document access rules (`docs/retrieval.md` #6).
+> `searchKnowledge` is access-scoped: retrieval resolves the caller's allowed Knowledge ids via the access layer before the SQL search (`docs/retrieval.md`).
 >
 > Application projects register their own skills by extending `SKILLS` in `src/agents/skills/index.ts` (per `docs/building-applications.md`); they are automatically exposed both as agent tools and as MCP custom tools.
 

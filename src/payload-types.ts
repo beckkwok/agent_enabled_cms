@@ -281,6 +281,18 @@ export interface Knowledge {
    * Optional link to the original source (e.g. the blog post URL).
    */
   sourceUrl?: string | null;
+  /**
+   * Who may retrieve this document. Retrieval and normal reads both enforce this.
+   */
+  visibility: 'public' | 'authenticated' | 'role' | 'private';
+  /**
+   * Owner (used by `private` visibility). Set automatically on create.
+   */
+  owner?: (number | null) | User;
+  /**
+   * Roles allowed to retrieve this document when visibility is `role`.
+   */
+  allowedRoles?: (number | Role)[] | null;
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
@@ -834,6 +846,9 @@ export interface KnowledgeSelect<T extends boolean = true> {
   title?: T;
   content?: T;
   sourceUrl?: T;
+  visibility?: T;
+  owner?: T;
+  allowedRoles?: T;
   updatedAt?: T;
   createdAt?: T;
   _status?: T;

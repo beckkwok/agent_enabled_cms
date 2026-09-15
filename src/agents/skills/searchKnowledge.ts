@@ -5,11 +5,11 @@ import type { Skill } from './types'
 
 /**
  * Searches the framework Knowledge base (hybrid RRF) and returns the top
- * matching excerpts.
+ * matching excerpts the caller is allowed to read.
  *
- * NOTE: retrieval currently runs in a trusted context (see
- * docs/v1-open-items.md #6 / docs/retrieval.md) — it does not yet filter by
- * the caller's Document access rules.
+ * Retrieval is access-scoped: `hybridSearch` resolves the caller's allowed
+ * Knowledge ids via Payload access rules before the SQL search runs
+ * (docs/retrieval.md).
  */
 export const searchKnowledge: Skill = {
   name: 'searchKnowledge',
@@ -23,7 +23,7 @@ export const searchKnowledge: Skill = {
     const query = String(args.query ?? '').trim()
     if (!query) return { results: [] }
     const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 20)
-    const matches = await hybridSearch(ctx.payload, query, { limit })
+    const matches = await hybridSearch(ctx.payload, query, { limit, user: ctx.user })
     return {
       results: matches.map((m) => ({ content: m.content, similarity: m.similarity })),
     }

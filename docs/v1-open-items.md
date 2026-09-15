@@ -66,9 +66,14 @@ So one agent = **one config row + one principal row** (+ one MCP key). Identity 
 - One provisioning flow creates `Agent` + its principal `User` + MCP key bound to the principal (seed or hook, `overrideAccess: true`) — one key per agent (audit identity) + one fallback key.
 - Keep the admin-side default self-service rule unless a real need for admin cross-issuance appears.
 
-## 6. RAG × access control (carried from docs/retrieval.md)
+## 6. RAG × access control (RESOLVED — design A + B implemented)
 
-Open: retrieval must not return documents the caller cannot read via Payload access rules. See `docs/retrieval.md` for candidates.
+Was: `hybridSearch` ran raw SQL with no per-user filtering. Now:
+
+- **A.** `Knowledge` has `visibility` (`public`/`authenticated`/`role`/`private`), `owner`, `allowedRoles`; `Knowledge.access` is visibility-aware (`knowledgeReadAccess`).
+- **B.** `hybridSearch(payload, query, { user })` resolves the caller's allowed Knowledge ids via `payload.find({ overrideAccess: false, user })` and scopes both the FTS and vector SQL to those ids. Callers pass the acting identity (agent principal / skill user / anonymous for the blog path).
+
+See `docs/retrieval.md` for details and the option-D follow-up (denormalized per-chunk ACL) for very large corpora. Skill invocation is still not role-gated — see #11.
 
 ## 7. Collection lifecycle (resolved — see docs/building-applications.md)
 
@@ -134,7 +139,7 @@ Two access layers exist and only one is currently role-aware (see `docs/agents.m
 
 Gaps to resolve:
 - **Per-role skill gating** — add a check (e.g. a `skill.access` predicate or `requiredRoles` on each skill) that consults the acting user's `type`/`role` before running, so sensitive skills are Admin-only even when the tool is enabled.
-- **Role-aware data rules** — make collection `access` functions consult `User.role` (and/or a `Role`→permissions model) instead of just "authenticated".
-- **`searchKnowledge` bypasses access entirely** (raw SQL) — see #6 / `docs/retrieval.md`.
+- **Role-aware data rules** — collection `access` functions consult `User.role` only for `Knowledge` so far (via `allowedRoles` + `visibility: role`); other collections still use user-*type* rules (`publicCollectionAccess` / `privateCollectionAccess`). Extend a consistent role model across collections.
+- **`searchKnowledge`** is now access-scoped (see #6); the remaining gap is per-role *skill invocation*.
 
 Status: **open** — design the role model first (what a `Role` grants), then apply it consistently to both skill invocation and data access.
