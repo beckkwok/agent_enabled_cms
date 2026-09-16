@@ -16,7 +16,8 @@ import { resolveAgentModel } from './model'
 import { buildAgentTools } from './skills/langchain'
 import type { SkillContext } from './skills/types'
 import { loadSessionHistory } from './memory'
-import { GuardrailError, redactOutput, scanInput } from './guardrails'
+import { GuardrailError } from './guardrails'
+import { createGuardrailEngine } from './guardrail-engine'
 import { actingUserOf, contentToText, loadAgent, resolveSession } from './shared'
 
 export type RunTrigger = NonNullable<AgentRun['triggeredBy']>
@@ -168,9 +169,10 @@ export async function runSingleShot({
     )
 
     const safetyMode = agent.safetyMode ?? 'monitor'
-    const inputScan = safetyMode !== 'off' ? scanInput(input) : { flagged: false, reasons: [] }
+    const engine = await createGuardrailEngine({ payload, agentId, safetyMode })
+    const inputScan = engine.scanInput(input)
 
-    if (safetyMode === 'enforce' && inputScan.flagged) {
+    if (safetyMode === 'enforce' && inputScan.blocked) {
       await payload
         .update({
           collection: 'agent-runs',
@@ -202,7 +204,7 @@ export async function runSingleShot({
     let output = contentToText(response.content)
     const redactions: string[] = []
     if (safetyMode !== 'off') {
-      const redacted = redactOutput(output)
+      const redacted = engine.redactOutput(output)
       output = redacted.text
       redactions.push(...redacted.redactions)
     }

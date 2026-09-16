@@ -79,6 +79,7 @@ export interface Config {
     providers: Provider;
     agents: Agent;
     'agent-runs': AgentRun;
+    guardrails: Guardrail;
     'payload-mcp-api-keys': PayloadMcpApiKey;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
@@ -99,6 +100,7 @@ export interface Config {
     providers: ProvidersSelect<false> | ProvidersSelect<true>;
     agents: AgentsSelect<false> | AgentsSelect<true>;
     'agent-runs': AgentRunsSelect<false> | AgentRunsSelect<true>;
+    guardrails: GuardrailsSelect<false> | GuardrailsSelect<true>;
     'payload-mcp-api-keys': PayloadMcpApiKeysSelect<false> | PayloadMcpApiKeysSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
@@ -487,6 +489,42 @@ export interface AgentRun {
   createdAt: string;
 }
 /**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "guardrails".
+ */
+export interface Guardrail {
+  id: number;
+  name: string;
+  enabled?: boolean | null;
+  /**
+   * Whether the rule applies to user input, model output, or both.
+   */
+  direction?: ('input' | 'output' | 'both') | null;
+  /**
+   * What to do when the pattern matches.
+   */
+  action?: ('flag' | 'block' | 'redact') | null;
+  /**
+   * Regular expression source (no slashes), e.g. \b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b for a card number.
+   */
+  pattern: string;
+  /**
+   * Regex flags, e.g. "i" (case-insensitive) or "gi" (global).
+   */
+  flags?: string | null;
+  /**
+   * Replacement text when action is "redact".
+   */
+  replacement?: string | null;
+  /**
+   * Optional: scope this rule to one agent. Leave empty to apply to all agents.
+   */
+  agent?: (number | null) | Agent;
+  description?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * API keys control which collections, resources, tools, and prompts MCP clients can access
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -744,6 +782,10 @@ export interface PayloadLockedDocument {
         value: number | AgentRun;
       } | null)
     | ({
+        relationTo: 'guardrails';
+        value: number | Guardrail;
+      } | null)
+    | ({
         relationTo: 'payload-mcp-api-keys';
         value: number | PayloadMcpApiKey;
       } | null);
@@ -983,6 +1025,23 @@ export interface AgentRunsSelect<T extends boolean = true> {
   session?: T;
   startedAt?: T;
   completedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "guardrails_select".
+ */
+export interface GuardrailsSelect<T extends boolean = true> {
+  name?: T;
+  enabled?: T;
+  direction?: T;
+  action?: T;
+  pattern?: T;
+  flags?: T;
+  replacement?: T;
+  agent?: T;
+  description?: T;
   updatedAt?: T;
   createdAt?: T;
 }

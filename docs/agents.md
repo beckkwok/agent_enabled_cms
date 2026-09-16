@@ -92,24 +92,41 @@ Content-Type: application/json
 
 ## Safety & guardrails
 
-`src/agents/guardrails.ts` provides two deterministic heuristics (a first line of defence — not a complete solution):
+The guardrail engine (`src/agents/guardrail-engine.ts`) merges three sources:
 
-- `scanInput(text)` — detects prompt-injection / jailbreak patterns (ignore/disregard instructions, reveal system prompt, "you are now", DAN, developer mode, override safety, …).
-- `redactOutput(text)` — strips secrets (OpenAI/Anthropic/AWS/MCP keys, bearer tokens, `api_key=`-style values) and emails from model output before it is returned or persisted.
+1. **Built-in heuristics** (`src/agents/guardrails.ts`): prompt-injection/jailbreak detection and secret/email redaction (common key prefixes).
+2. **CMS rules** — the `Guardrails` collection (application-configurable regex rules, see below).
+3. **Configured secrets** — the actual values behind enabled `Provider`s (`keyRef` env or pasted key) are redacted by **exact match**, so unknown providers (Grok/xAI, HuggingFace, …) are covered because it's *your* key, not a pattern.
 
 Per-agent `safetyMode`:
 
 | Mode | Behaviour |
 | --- | --- |
-| `off` | No scanning/redaction. |
+| `off` | Engine is a no-op. |
 | `monitor` (default) | Scans + redacts; **flags** the run but does not block. |
-| `enforce` | Blocks flagged input (run endpoint → **403**; stream → `error` event) and redacts output. In streaming enforce mode tokens are buffered and redacted before being emitted. |
+| `enforce` | Blocks input that matches a blocking rule (built-in injection or a custom `block` rule); redacts output. Streaming buffers + redacts before emitting tokens. |
 
-Flagged runs are recorded on the `AgentRun` (`flagged`, `flagReasons`) — the observability surface for suspicious activity. `flagReasons` combines input reasons (e.g. `prompt-injection:dan`) and redaction names (e.g. `openai-key`).
+### Configurable rules (`Guardrails` collection)
 
-**Red-team suite:** `tests/unit/guardrails.unit.spec.ts` (injection prompts, secret/PII redaction) + `tests/int/guardrails.int.spec.ts` (enforce blocks + marks failed, redacts output, monitor flags, off passthrough).
+Applications add their own input/output patterns — e.g. a bank detecting account numbers. Each rule has:
 
-**Not covered yet** (see `docs/v1-open-items.md` #9): semantic/LLM-based injection detection, output content policy, rate limiting, human-in-the-loop for high-risk operations, and never putting secrets in the prompt (currently relies on prompts/context not containing them).
+| Field | Meaning |
+| --- | --- |
+| `name` | Identifier (appears in `flagReasons` as `custom:<name>`). |
+| `direction` | `input` / `output` / `both`. |
+| `action` | `flag` (record), `block` (reject in enforce mode), `redact` (replace matches). |
+| `pattern` / `flags` | Regex source + flags (e.g. `\\b\\d{8}\\b`, `gi`). |
+| `replacement` | Used when action is `redact` (default `[REDACTED]`). |
+| `agent` | Optional: scope to one agent; empty = all agents. |
+| `enabled` | Toggle. |
+
+Invalid regexes are ignored safely. Rules apply only when the agent's `safetyMode` is not `off`.
+
+Flagged runs are recorded on `AgentRun` (`flagged`, `flagReasons` — e.g. `prompt-injection:dan, custom:bank-acct, configured-secret`).
+
+**Red-team suite:** `tests/unit/guardrails.unit.spec.ts`, `tests/unit/guardrail-engine.unit.spec.ts`, `tests/int/guardrails.int.spec.ts`, `tests/int/guardrails-config.int.spec.ts`.
+
+**Inherent limits** (see `docs/v1-open-items.md` #9): regex/heuristic detection is signature-based — paraphrased injections and unlabelled, unconfigured secrets can pass. Treat guardrails as defence-in-depth, not the security boundary (that is tool/data access control + not putting secrets in context).
 
 ## Queue (`runAgent` task)
 

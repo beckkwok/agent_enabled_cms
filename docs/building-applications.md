@@ -117,6 +117,12 @@ and commit the migration. Removing a skill that an `Agent` still references will
 - **Unit**: call `skill.handler(args, { payload, user })` and assert it passes `overrideAccess: false` + `user` (see `tests/unit/skills.unit.spec.ts`).
 - **Integration**: run an agent with the skill via a scripted model (`tests/int/agent-tools.int.spec.ts`) and assert the `AgentRun` + result.
 
+## Guardrail rules (application-specific safety)
+
+Applications can add their own input/output detection patterns via the **`Guardrails`** collection (admin) — no code change. Each rule is a regex with a `direction` (`input`/`output`/`both`), an `action` (`flag`/`block`/`redact`), an optional `agent` scope, and an `enabled` toggle. Examples: detect account numbers in input, mask PII in output.
+
+Set the agent's `safetyMode` to `enforce` to reject blocking matches. The engine also redacts the actual configured `Provider` secrets by exact match, so provider-specific keys are covered automatically. See `docs/agents.md` → "Safety & guardrails".
+
 ## Working procedure for application developers
 
 1. Read `AGENTS.md`, `docs/development.md`, `docs/agents.md`, `docs/mcp-connectivity.md`, `docs/retrieval.md`, `docs/provider-model.md`.

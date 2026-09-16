@@ -11,6 +11,7 @@ import { Roles } from './collections/Roles'
 import { Providers } from './collections/Providers'
 import { Agents } from './collections/Agents'
 import { AgentRuns } from './collections/AgentRuns'
+import { Guardrails } from './collections/Guardrails'
 import { Media } from './collections/Media'
 import { BlogPosts } from './collections/BlogPosts'
 import { Knowledge } from './collections/Knowledge'
@@ -34,7 +35,7 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
   },
-  collections: [Users, Media, BlogPosts, Knowledge, KnowledgeChunk, ChatSession, ChatMessage, Roles, Providers, Agents, AgentRuns],
+  collections: [Users, Media, BlogPosts, Knowledge, KnowledgeChunk, ChatSession, ChatMessage, Roles, Providers, Agents, AgentRuns, Guardrails],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {

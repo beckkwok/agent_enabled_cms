@@ -15,7 +15,7 @@ import {
   MAX_TOOL_ITERATIONS,
   type RunTrigger,
 } from './run'
-import { redactOutput, scanInput } from './guardrails'
+import { createGuardrailEngine } from './guardrail-engine'
 import { contentToText, resolveSession } from './shared'
 
 /** Events emitted by the streaming agent method (SSE `data:` lines). */
@@ -81,10 +81,11 @@ export async function streamAgentRun({
         )
 
         const safetyMode = agent.safetyMode ?? 'monitor'
-        const inputScan = safetyMode !== 'off' ? scanInput(input) : { flagged: false, reasons: [] }
+        const engine = await createGuardrailEngine({ payload, agentId, safetyMode })
+        const inputScan = engine.scanInput(input)
         const enforce = safetyMode === 'enforce'
 
-        if (enforce && inputScan.flagged) {
+        if (enforce && inputScan.blocked) {
           await payload
             .update({
               collection: 'agent-runs',
@@ -147,7 +148,7 @@ export async function streamAgentRun({
         const redactions: string[] = []
         let finalOutput = output
         if (safetyMode !== 'off') {
-          const redacted = redactOutput(output)
+          const redacted = engine.redactOutput(output)
           finalOutput = redacted.text
           redactions.push(...redacted.redactions)
         }
