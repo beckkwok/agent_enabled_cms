@@ -18,6 +18,7 @@ import type { SkillContext } from './skills/types'
 import { loadSessionHistory } from './memory'
 import { GuardrailError } from './guardrails'
 import { createGuardrailEngine } from './guardrail-engine'
+import { classifyInjection } from './semantic-guard'
 import { actingUserOf, contentToText, loadAgent, resolveSession } from './shared'
 
 export type RunTrigger = NonNullable<AgentRun['triggeredBy']>
@@ -172,6 +173,18 @@ export async function runSingleShot({
     const engine = await createGuardrailEngine({ payload, agentId, safetyMode })
     const inputScan = engine.scanInput(input)
 
+    const baseModel = modelOverride ?? resolveAgentModel(agent)
+
+    // Opt-in semantic injection check (uses the agent's own model).
+    if (agent.semanticSafety && safetyMode !== 'off') {
+      const injection = await classifyInjection(baseModel, input)
+      if (injection) {
+        inputScan.flagged = true
+        inputScan.blocked = true
+        inputScan.reasons.push('semantic-injection')
+      }
+    }
+
     if (safetyMode === 'enforce' && inputScan.blocked) {
       await payload
         .update({
@@ -190,7 +203,6 @@ export async function runSingleShot({
       throw new GuardrailError(inputScan.reasons)
     }
 
-    const baseModel = modelOverride ?? resolveAgentModel(agent)
     const model = tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
 
     const messages = buildMessages(systemContent, history, input)

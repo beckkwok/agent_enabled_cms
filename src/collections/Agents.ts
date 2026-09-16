@@ -121,6 +121,15 @@ export const Agents: CollectionConfig = {
       },
     },
     {
+      name: 'semanticSafety',
+      type: 'checkbox',
+      defaultValue: false,
+      admin: {
+        description:
+          'Opt-in: also run a semantic (model-based) prompt-injection check on input. Costs an extra model call per run; off by default.',
+      },
+    },
+    {
       name: 'user',
       type: 'relationship',
       relationTo: 'users',

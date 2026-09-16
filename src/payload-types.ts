@@ -376,6 +376,10 @@ export interface Agent {
    */
   safetyMode?: ('off' | 'monitor' | 'enforce') | null;
   /**
+   * Opt-in: also run a semantic (model-based) prompt-injection check on input. Costs an extra model call per run; off by default.
+   */
+  semanticSafety?: boolean | null;
+  /**
    * The User principal (type Agent) this agent acts as for access control / MCP keys. The MCP access key is issued against this principal in the admin MCP → API Keys collection — never store the key itself on this record.
    */
   user: number | User;
@@ -1002,6 +1006,7 @@ export interface AgentsSelect<T extends boolean = true> {
   tools?: T;
   runAccess?: T;
   safetyMode?: T;
+  semanticSafety?: T;
   user?: T;
   provider?: T;
   model?: T;

@@ -15,6 +15,7 @@ An agent is **two rows**: its `Agent` config row plus a `User` principal of type
 | `tools` | CMS skills the agent may call during a run (see below). |
 | `runAccess` | Who may call the run endpoint: `public` / `authenticated` (default) / `admin`. |
 | `safetyMode` | Guardrails: `off` / `monitor` (default) / `enforce`. |
+| `semanticSafety` | Opt-in semantic prompt-injection check (extra model call; default off). |
 | `user` | The `User` principal (type `Agent`) the agent acts as; its MCP key is issued against this principal. |
 | `provider` | `Provider` record used for the model. |
 | `model` | Model id from the provider. |
@@ -92,11 +93,12 @@ Content-Type: application/json
 
 ## Safety & guardrails
 
-The guardrail engine (`src/agents/guardrail-engine.ts`) merges three sources:
+The guardrail engine (`src/agents/guardrail-engine.ts`) merges these sources:
 
-1. **Built-in heuristics** (`src/agents/guardrails.ts`): prompt-injection/jailbreak detection and secret/email redaction (common key prefixes).
+1. **Built-in heuristics** (`src/agents/guardrails.ts`): prompt-injection/jailbreak detection and secret/email redaction, including an **entropy heuristic** that catches unlabelled/unknown-provider secrets (e.g. Grok/xAI) by randomness — not just known prefixes.
 2. **CMS rules** — the `Guardrails` collection (application-configurable regex rules, see below).
-3. **Configured secrets** — the actual values behind enabled `Provider`s (`keyRef` env or pasted key) are redacted by **exact match**, so unknown providers (Grok/xAI, HuggingFace, …) are covered because it's *your* key, not a pattern.
+3. **Configured secrets** — the actual values behind enabled `Provider`s (`keyRef` env or pasted key) are redacted by **exact match**, so any provider is covered because it's *your* key.
+4. **Optional semantic check** — `Agent.semanticSafety` (default **off**): a model-based prompt-injection classifier using the agent's own `Provider`. Generalises beyond regex (catches paraphrases) but costs an extra model call; fails open on error.
 
 Per-agent `safetyMode`:
 
@@ -124,9 +126,9 @@ Invalid regexes are ignored safely. Rules apply only when the agent's `safetyMod
 
 Flagged runs are recorded on `AgentRun` (`flagged`, `flagReasons` — e.g. `prompt-injection:dan, custom:bank-acct, configured-secret`).
 
-**Red-team suite:** `tests/unit/guardrails.unit.spec.ts`, `tests/unit/guardrail-engine.unit.spec.ts`, `tests/int/guardrails.int.spec.ts`, `tests/int/guardrails-config.int.spec.ts`.
+**Red-team suite:** `tests/unit/guardrails.unit.spec.ts`, `tests/unit/guardrail-engine.unit.spec.ts`, `tests/unit/semantic-guard.unit.spec.ts`, `tests/int/guardrails.int.spec.ts`, `tests/int/guardrails-config.int.spec.ts`.
 
-**Inherent limits** (see `docs/v1-open-items.md` #9): regex/heuristic detection is signature-based — paraphrased injections and unlabelled, unconfigured secrets can pass. Treat guardrails as defence-in-depth, not the security boundary (that is tool/data access control + not putting secrets in context).
+**Inherent limits** (see `docs/v1-open-items.md` #9): regex/entropy detection is signature/heuristic-based — paraphrased injections and secrets that are neither configured nor random-looking can pass. The semantic check (opt-in) narrows the paraphrase gap but is itself a model. Treat guardrails as defence-in-depth, not the security boundary (that is tool/data access control + not putting secrets in context). Entropy can over-redact hashes/IDs — tune `ENTROPY_THRESHOLD`.
 
 ## Queue (`runAgent` task)
 

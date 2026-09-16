@@ -57,6 +57,36 @@ function matches(pattern: Pattern, text: string): boolean {
   return new RegExp(pattern.source, pattern.flags ?? '').test(text)
 }
 
+/** Shannon entropy in bits per character. Random-looking secrets score high. */
+export function shannonEntropy(value: string): number {
+  if (value.length === 0) return 0
+  const freq: Record<string, number> = {}
+  for (const ch of value) freq[ch] = (freq[ch] ?? 0) + 1
+  let entropy = 0
+  for (const ch in freq) {
+    const p = freq[ch] / value.length
+    entropy -= p * Math.log2(p)
+  }
+  return entropy
+}
+
+/** Candidate secret tokens: long runs of key-ish characters. */
+export const SECRET_TOKEN_RE = /[A-Za-z0-9_\-+/=]{20,}/g
+
+const ENTROPY_THRESHOLD = 3.5
+
+/**
+ * Heuristic: does this token look like an unlabelled secret? High entropy +
+ * mixed character classes. Catches unknown providers' keys (Grok/xAI, …)
+ * without a prefix pattern. Can over-match hashes/IDs — tune the threshold.
+ */
+export function looksLikeSecret(token: string): boolean {
+  if (token.length < 20) return false
+  const classes = [/[A-Z]/, /[a-z]/, /[0-9]/].filter((re) => re.test(token)).length
+  if (classes < 2) return false
+  return shannonEntropy(token) >= ENTROPY_THRESHOLD
+}
+
 /** Scans user input for prompt-injection / jailbreak patterns. */
 export function scanInput(text: string): GuardrailResult {
   const reasons: string[] = []
@@ -70,6 +100,7 @@ export function scanInput(text: string): GuardrailResult {
 export function redactOutput(text: string): RedactResult {
   let out = text
   const redactions: string[] = []
+
   for (const pattern of [...SECRET_PATTERNS, ...PII_PATTERNS]) {
     const re = new RegExp(pattern.source, `${pattern.flags ?? ''}g`)
     if (re.test(out)) {
@@ -77,6 +108,14 @@ export function redactOutput(text: string): RedactResult {
       out = out.replace(re, '[REDACTED]')
     }
   }
+
+  // Entropy pass: catch unlabelled/unknown-provider secrets by randomness.
+  out = out.replace(SECRET_TOKEN_RE, (token) => {
+    if (!looksLikeSecret(token)) return token
+    if (!redactions.includes('entropy')) redactions.push('entropy')
+    return '[REDACTED]'
+  })
+
   return { text: out, redactions }
 }
 

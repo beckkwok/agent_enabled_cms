@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
 
-import { redactOutput, scanInput } from '@/agents/guardrails'
+import { redactOutput, scanInput, looksLikeSecret, shannonEntropy } from '@/agents/guardrails'
 
 describe('scanInput — red-team cases', () => {
   const injections = [
@@ -53,5 +53,26 @@ describe('redactOutput', () => {
   it('leaves clean text untouched', () => {
     const clean = 'AACMS is a framework built on Payload and Postgres.'
     expect(redactOutput(clean)).toEqual({ text: clean, redactions: [] })
+  })
+})
+
+describe('entropy heuristic', () => {
+  it('scores random-looking tokens higher than prose', () => {
+    expect(shannonEntropy('9fK2mQ8pL4wZ1rB7nT')).toBeGreaterThan(shannonEntropy('passwordpassword'))
+  })
+
+  it('flags a high-entropy mixed-class token', () => {
+    expect(looksLikeSecret('9fK2mQ8pL4wZ1rB7nT5x')).toBe(true)
+  })
+
+  it('does not flag ordinary words or repeated chars', () => {
+    expect(looksLikeSecret('internationalisation')).toBe(false)
+    expect(looksLikeSecret('aaaaaaaaaaaaaaaaaaaaaaaa')).toBe(false)
+  })
+
+  it('redacts an unlabelled, unknown-provider key (e.g. Grok/xAI style)', () => {
+    const { text, redactions } = redactOutput('here: xai-9fK2mQ8pL4wZ1rB7nT5xC6vB8nM')
+    expect(text).not.toContain('9fK2mQ8pL4wZ1rB7nT5xC6vB8nM')
+    expect(redactions).toContain('entropy')
   })
 })

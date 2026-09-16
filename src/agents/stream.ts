@@ -16,6 +16,7 @@ import {
   type RunTrigger,
 } from './run'
 import { createGuardrailEngine } from './guardrail-engine'
+import { classifyInjection } from './semantic-guard'
 import { contentToText, resolveSession } from './shared'
 
 /** Events emitted by the streaming agent method (SSE `data:` lines). */
@@ -85,6 +86,17 @@ export async function streamAgentRun({
         const inputScan = engine.scanInput(input)
         const enforce = safetyMode === 'enforce'
 
+        const baseModel = modelOverride ?? resolveAgentModel(agent)
+
+        if (agent.semanticSafety && safetyMode !== 'off') {
+          const injection = await classifyInjection(baseModel, input)
+          if (injection) {
+            inputScan.flagged = true
+            inputScan.blocked = true
+            inputScan.reasons.push('semantic-injection')
+          }
+        }
+
         if (enforce && inputScan.blocked) {
           await payload
             .update({
@@ -104,7 +116,6 @@ export async function streamAgentRun({
           return
         }
 
-        const baseModel = modelOverride ?? resolveAgentModel(agent)
         const model =
           tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
 

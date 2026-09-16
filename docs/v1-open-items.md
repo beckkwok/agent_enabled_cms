@@ -114,17 +114,17 @@ Candidate mitigations (to design later):
 - **Observability** — log/alert on suspicious prompts and on tool calls that touch sensitive collections (feeds conversation logs + `onEvent`).
 - **Human-in-the-loop** for high-risk operations (e.g. confirm before writes/deletes).
 
-Status: **partially implemented.** Guardrails v1 is live (see `docs/agents.md` → "Safety & guardrails"): per-agent `safetyMode` (`off`/`monitor`/`enforce`), built-in prompt-injection detection + secret/PII redaction, **CMS-configurable rules** (`Guardrails` collection), and **exact-match redaction of configured provider secrets**, with run flags on `AgentRun`. Red-team suite: `tests/unit/guardrails*.spec.ts`, `tests/int/guardrails*.spec.ts`.
+Status: **partially implemented.** Guardrails v1 is live (see `docs/agents.md` → "Safety & guardrails"): per-agent `safetyMode` (`off`/`monitor`/`enforce`), built-in prompt-injection detection + secret/PII redaction, an **entropy heuristic** for unlabelled secrets, **CMS-configurable rules** (`Guardrails` collection), **exact-match redaction of configured provider secrets**, and an **opt-in semantic injection check** (`Agent.semanticSafety`, off by default, uses the agent's provider). Run flags on `AgentRun` (`flagged`/`flagReasons`). Red-team suite: `tests/unit/guardrails*.spec.ts`, `tests/unit/semantic-guard.unit.spec.ts`, `tests/int/guardrails*.spec.ts`.
 
 Remaining:
-- **Semantic detection** — LLM/heuristic hybrids for paraphrased/obfuscated injections (built-ins are regex-based; custom rules are user-authored regex).
 - **Output content policy** — beyond secrets/PII (toxicity, off-policy claims).
 - **Rate limiting / abuse throttling** per agent/key.
 - **Human-in-the-loop** for high-risk operations (confirm before writes/deletes).
 - **Scan the outgoing prompt** (defence-in-depth if context ever contains a secret).
 - Wire `onEvent`/conversation logs into alerting for flagged runs.
+- Tune entropy threshold to reduce false positives on hashes/IDs.
 
-> Note the inherent limit: regex/heuristic detection is signature-based — unconfigured, unlabelled secrets and paraphrased injections can pass. Guardrails are defence-in-depth; the real boundary is tool/data access control + not putting secrets in context.
+> Note the inherent limit: detection is heuristic (regex/entropy) plus an optional model. Guardrails are defence-in-depth; the real boundary is tool/data access control + not putting secrets in context.
 
 ## 10. Provider API key: true server-side masking (ENHANCEMENT — not good practice currently)
 
