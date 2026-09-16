@@ -62,6 +62,21 @@ test.describe('Agent run endpoint (agent ↔ CMS)', () => {
     expect(res.status()).toBe(401)
   })
 
+  test('stream endpoint returns an SSE response', async ({ request }) => {
+    const res = await request.post(`${BASE}/api/agents/${publicAgentId}/stream`, {
+      data: { input: 'hello' },
+    })
+    expect(res.status()).toBe(200)
+    expect(res.headers()['content-type']).toContain('text/event-stream')
+  })
+
+  test('stream endpoint enforces access (401 for authenticated agent)', async ({ request }) => {
+    const res = await request.post(`${BASE}/api/agents/${authAgentId}/stream`, {
+      data: { input: 'hello' },
+    })
+    expect(res.status()).toBe(401)
+  })
+
   test('MCP rejects requests without an API key (401)', async ({ request }) => {
     const res = await request.post(`${BASE}/api/mcp`, {
       data: { jsonrpc: '2.0', id: '1', method: 'tools/list' },

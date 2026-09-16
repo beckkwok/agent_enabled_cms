@@ -1,7 +1,7 @@
 import type { CollectionConfig } from 'payload'
 
 import { adminCollectionAccess } from './helpers/access'
-import { runAgentEndpoint } from '@/agents/endpoint'
+import { runAgentEndpoint, streamAgentEndpoint } from '@/agents/endpoint'
 import { SKILLS } from '@/agents/skills'
 
 export const Agents: CollectionConfig = {
@@ -17,6 +17,11 @@ export const Agents: CollectionConfig = {
       path: '/:id/run',
       method: 'post',
       handler: runAgentEndpoint,
+    },
+    {
+      path: '/:id/stream',
+      method: 'post',
+      handler: streamAgentEndpoint,
     },
   ],
   fields: [

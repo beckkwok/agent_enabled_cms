@@ -1,0 +1,186 @@
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import {
+  AIMessage,
+  AIMessageChunk,
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+  type BaseMessage,
+} from '@langchain/core/messages'
+import type { Payload } from 'payload'
+import type { AgentRun } from '@/payload-types'
+
+import { resolveAgentModel } from './model'
+import { buildRunContext, executeTool, MAX_TOOL_ITERATIONS, type RunTrigger } from './run'
+import { contentToText, resolveSession } from './shared'
+
+/** Events emitted by the streaming agent method (SSE `data:` lines). */
+export type AgentStreamEvent =
+  | { type: 'token'; content: string }
+  | { type: 'done'; runId: number; sessionId: string; output: string }
+  | { type: 'error'; message: string }
+
+export type StreamAgentArgs = {
+  payload: Payload
+  agentId: number
+  input: string
+  sessionId?: string
+  triggeredBy?: RunTrigger
+  /** Test seam: override the chat model. */
+  model?: BaseChatModel
+}
+
+/** Encodes an event as an SSE `data:` frame. */
+export function encodeSseEvent(event: AgentStreamEvent): Uint8Array {
+  return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`)
+}
+
+/**
+ * Framework streaming method: runs an agent and streams tokens as SSE frames.
+ *
+ * The channel (web SSE endpoint, WhatsApp adapter, …) is application-specific;
+ * this method owns the streaming behaviour and persistence:
+ *   - streams `token` events as the model produces text,
+ *   - executes tool calls (same access-controlled skills as single-shot),
+ *   - persists ChatSession/ChatMessages + an AgentRun trace,
+ *   - emits a final `done` (or `error`) event.
+ */
+export async function streamAgentRun({
+  payload,
+  agentId,
+  input,
+  sessionId,
+  triggeredBy = 'api',
+  model: modelOverride,
+}: StreamAgentArgs): Promise<ReadableStream<Uint8Array>> {
+  const startedAt = new Date().toISOString()
+
+  const run = await payload.create({
+    collection: 'agent-runs',
+    data: { agent: agentId, status: 'running', input, triggeredBy, startedAt },
+    overrideAccess: true,
+  })
+
+  const encoder = new TextEncoder()
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: AgentStreamEvent) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+
+      try {
+        const { agent, tools, systemContent } = await buildRunContext(payload, agentId, input)
+        const baseModel = modelOverride ?? resolveAgentModel(agent)
+        const model =
+          tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
+
+        const messages: BaseMessage[] = [
+          ...(systemContent ? [new SystemMessage(systemContent)] : []),
+          new HumanMessage(input),
+        ]
+
+        let output = ''
+        let iterations = 0
+
+        for (;;) {
+          const stream = await model.stream(messages)
+          let aggregate: AIMessageChunk | null = null
+
+          for await (const chunk of stream) {
+            const aiChunk = chunk as AIMessageChunk
+            aggregate = aggregate ? aggregate.concat(aiChunk) : aiChunk
+            const text = contentToText(aiChunk.content)
+            if (text) {
+              output += text
+              send({ type: 'token', content: text })
+            }
+          }
+
+          const toolCalls = aggregate?.tool_calls ?? []
+          if (toolCalls.length === 0 || iterations >= MAX_TOOL_ITERATIONS) break
+
+          messages.push(aggregate as unknown as AIMessage)
+          for (const call of toolCalls) {
+            const result = await executeTool(tools, call.name, call.args)
+            messages.push(
+              new ToolMessage({
+                content: typeof result === 'string' ? result : JSON.stringify(result),
+                tool_call_id: call.id ?? call.name,
+                name: call.name,
+              }),
+            )
+          }
+          iterations += 1
+        }
+
+        const session = await resolveSession(payload, agentId, sessionId)
+
+        await payload.create({
+          collection: 'chat-messages',
+          data: { session: session.id, role: 'user', content: input },
+          overrideAccess: true,
+        })
+        await payload.create({
+          collection: 'chat-messages',
+          data: { session: session.id, role: 'assistant', content: output },
+          overrideAccess: true,
+        })
+        await payload.update({
+          collection: 'agent-runs',
+          id: run.id,
+          data: {
+            status: 'succeeded',
+            output,
+            completedAt: new Date().toISOString(),
+            session: session.id,
+          },
+          overrideAccess: true,
+        })
+
+        send({ type: 'done', runId: run.id, sessionId: session.sessionId, output })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        await payload
+          .update({
+            collection: 'agent-runs',
+            id: run.id,
+            data: { status: 'failed', error: message, completedAt: new Date().toISOString() },
+            overrideAccess: true,
+          })
+          .catch(() => undefined)
+        send({ type: 'error', message })
+      } finally {
+        controller.close()
+      }
+    },
+  })
+}
+
+/** Convenience: drain a stream into the list of events (useful for tests/servers). */
+export async function collectStreamEvents(
+  stream: ReadableStream<Uint8Array>,
+): Promise<AgentStreamEvent[]> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  const events: AgentStreamEvent[] = []
+  let buffer = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const frames = buffer.split('\n\n')
+    buffer = frames.pop() ?? ''
+    for (const frame of frames) {
+      const line = frame.trim()
+      if (!line.startsWith('data:')) continue
+      try {
+        events.push(JSON.parse(line.slice(5).trim()) as AgentStreamEvent)
+      } catch {
+        // ignore malformed frames
+      }
+    }
+  }
+
+  return events
+}

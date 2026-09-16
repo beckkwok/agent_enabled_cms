@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import {
   AIMessage,
@@ -9,14 +8,14 @@ import {
 } from '@langchain/core/messages'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { Payload } from 'payload'
-import type { Agent, AgentRun, User } from '@/payload-types'
+import type { AgentRun } from '@/payload-types'
 
 import { hybridSearch } from '@/lib/vectorSearch'
-import type { AgentWithProvider } from '@/lib/provider-runtime'
 import { agentPromptToText } from './prompt'
 import { resolveAgentModel } from './model'
 import { buildAgentTools } from './skills/langchain'
 import type { SkillContext } from './skills/types'
+import { actingUserOf, contentToText, loadAgent, resolveSession } from './shared'
 
 export type RunTrigger = NonNullable<AgentRun['triggeredBy']>
 
@@ -40,51 +39,42 @@ export type RunSingleShotResult = {
 
 const MAX_TOOL_ITERATIONS = 5
 
-function contentToText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => (typeof part === 'string' ? part : (part as { text?: string })?.text ?? ''))
-      .join('')
+export { MAX_TOOL_ITERATIONS }
+
+/** Builds the system prompt + messages and the skill context for a run. */
+export async function buildRunContext(payload: Payload, agentId: number, input: string) {
+  const agent = await loadAgent(payload, agentId)
+  const actingUser = actingUserOf(agent)
+
+  const capabilities = agent.capabilities ?? []
+  let context = ''
+  if (capabilities.includes('knowledge')) {
+    const matches = await hybridSearch(payload, input, { limit: 5, user: actingUser })
+    context = matches.map((m, i) => `[${i + 1}] ${m.content}`).join('\n\n')
   }
-  return ''
+
+  const systemParts = [agentPromptToText(agent.prompt)]
+  if (context) systemParts.push(`Context:\n${context}`)
+  const systemContent = systemParts.filter(Boolean).join('\n\n')
+
+  const skillCtx: SkillContext = { payload, user: actingUser }
+  const tools = buildAgentTools(agent.tools ?? [], skillCtx)
+
+  return { agent, actingUser, skillCtx, tools, systemContent }
 }
 
-/** Finds or creates the agent-scoped chat session, returning its doc id + key. */
-async function resolveSession(
-  payload: Payload,
-  agentId: number,
-  sessionId?: string,
-): Promise<{ id: number; sessionId: string }> {
-  if (sessionId) {
-    const found = await payload.find({
-      collection: 'chat-sessions',
-      where: { sessionId: { equals: sessionId } },
-      limit: 1,
-      depth: 0,
-      overrideAccess: true,
-    })
-    const existing = found.docs[0]
-    if (existing) {
-      if (!existing.agent) {
-        await payload.update({
-          collection: 'chat-sessions',
-          id: existing.id,
-          data: { agent: agentId },
-          overrideAccess: true,
-        })
-      }
-      return { id: existing.id, sessionId: existing.sessionId }
-    }
+/** Executes a tool call and returns a JSON-serializable result (errors captured). */
+export async function executeTool(
+  tools: StructuredToolInterface[],
+  name: string,
+  args: unknown,
+): Promise<unknown> {
+  try {
+    const found = tools.find((t) => t.name === name)
+    return found ? await found.invoke(args as Record<string, unknown>) : { error: `Unknown tool: ${name}` }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
   }
-
-  const key = sessionId || randomUUID()
-  const created = await payload.create({
-    collection: 'chat-sessions',
-    data: { sessionId: key, agent: agentId },
-    overrideAccess: true,
-  })
-  return { id: created.id, sessionId: created.sessionId }
 }
 
 /** Runs the model, executing any tool calls, until it returns a final answer. */
@@ -100,13 +90,7 @@ async function runWithTools(
     const toolCalls = (response as AIMessage).tool_calls ?? []
     messages.push(response)
     for (const call of toolCalls) {
-      let result: unknown
-      try {
-        const found = tools.find((t) => t.name === call.name)
-        result = found ? await found.invoke(call.args) : { error: `Unknown tool: ${call.name}` }
-      } catch (err) {
-        result = { error: err instanceof Error ? err.message : String(err) }
-      }
+      const result = await executeTool(tools, call.name, call.args)
       messages.push(
         new ToolMessage({
           content: typeof result === 'string' ? result : JSON.stringify(result),
@@ -138,13 +122,6 @@ export async function runSingleShot({
   runId,
   model: modelOverride,
 }: RunSingleShotArgs): Promise<RunSingleShotResult> {
-  const agent = (await payload.findByID({
-    collection: 'agents',
-    id: agentId,
-    depth: 1,
-    overrideAccess: true,
-  })) as unknown as AgentWithProvider & { user?: number | User }
-
   const startedAt = new Date().toISOString()
 
   const run = runId
@@ -161,26 +138,10 @@ export async function runSingleShot({
       })
 
   try {
-    const capabilities = agent.capabilities ?? []
-    // Skills/retrieval run as the agent's principal so access rules apply.
-    const actingUser = agent.user && typeof agent.user === 'object' ? agent.user : null
-
-    let context = ''
-    if (capabilities.includes('knowledge')) {
-      const matches = await hybridSearch(payload, input, { limit: 5, user: actingUser })
-      context = matches.map((m, i) => `[${i + 1}] ${m.content}`).join('\n\n')
-    }
-
-    const systemParts = [agentPromptToText(agent.prompt)]
-    if (context) systemParts.push(`Context:\n${context}`)
-    const systemContent = systemParts.filter(Boolean).join('\n\n')
-
-    const skillCtx: SkillContext = { payload, user: actingUser }
-    const tools = buildAgentTools(agent.tools ?? [], skillCtx)
+    const { agent, tools, systemContent } = await buildRunContext(payload, agentId, input)
 
     const baseModel = modelOverride ?? resolveAgentModel(agent)
-    const model =
-      tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
+    const model = tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
 
     const messages: BaseMessage[] = [
       ...(systemContent ? [new SystemMessage(systemContent)] : []),
