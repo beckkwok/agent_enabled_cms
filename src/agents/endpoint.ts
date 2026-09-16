@@ -2,6 +2,7 @@ import { addDataAndFileToRequest, type PayloadHandler, type PayloadRequest } fro
 import type { Agent } from '@/payload-types'
 
 import { checkAgentRunAccess } from './access'
+import { GuardrailError } from './guardrails'
 import { runSingleShot } from './run'
 import { streamAgentRun } from './stream'
 
@@ -113,8 +114,13 @@ export const runAgentEndpoint: PayloadHandler = async (req) => {
     return json({ runId: run.id, status: 'queued' }, 202)
   }
 
-  const result = await runSingleShot({ payload, agentId: id, input, sessionId, triggeredBy: 'api' })
-  return json(result, 200)
+  try {
+    const result = await runSingleShot({ payload, agentId: id, input, sessionId, triggeredBy: 'api' })
+    return json(result, 200)
+  } catch (err) {
+    if (err instanceof GuardrailError) return json({ error: err.message }, 403)
+    throw err
+  }
 }
 
 /**

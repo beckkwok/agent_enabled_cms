@@ -114,7 +114,15 @@ Candidate mitigations (to design later):
 - **Observability** — log/alert on suspicious prompts and on tool calls that touch sensitive collections (feeds conversation logs + `onEvent`).
 - **Human-in-the-loop** for high-risk operations (e.g. confirm before writes/deletes).
 
-Status: **not implemented** — capture as a first-class workstream alongside the evaluation framework (roadmap step 4). Do not treat the current setup as safe against adversarial users until this is designed and tested.
+Status: **partially implemented.** Guardrails v1 is live (see `docs/agents.md` → "Safety & guardrails"): per-agent `safetyMode` (`off`/`monitor`/`enforce`), heuristic prompt-injection detection (`scanInput`), secret/PII output redaction (`redactOutput`), and run flags on `AgentRun` (`flagged`/`flagReasons`). A red-team suite covers injections + redaction (`tests/unit/guardrails.unit.spec.ts`, `tests/int/guardrails.int.spec.ts`).
+
+Remaining:
+- **Semantic detection** — LLM/heuristic hybrids for obfuscated injections (current rules are regex-based).
+- **Output content policy** — beyond secrets/PII (toxicity, off-policy claims).
+- **Rate limiting / abuse throttling** per agent/key.
+- **Human-in-the-loop** for high-risk operations (confirm before writes/deletes).
+- **Never put secrets in prompt** — currently relies on prompts/context not containing them; consider scanning the outgoing prompt too.
+- Wire `onEvent`/conversation logs into alerting for flagged runs.
 
 ## 10. Provider API key: true server-side masking (ENHANCEMENT — not good practice currently)
 

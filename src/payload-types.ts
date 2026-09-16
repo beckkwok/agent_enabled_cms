@@ -370,6 +370,10 @@ export interface Agent {
    */
   runAccess: 'public' | 'authenticated' | 'admin';
   /**
+   * Guardrails: scan input for prompt-injection and redact secrets/PII from output. "enforce" also blocks flagged input. See docs/agents.md.
+   */
+  safetyMode?: ('off' | 'monitor' | 'enforce') | null;
+  /**
    * The User principal (type Agent) this agent acts as for access control / MCP keys. The MCP access key is issued against this principal in the admin MCP → API Keys collection — never store the key itself on this record.
    */
   user: number | User;
@@ -468,6 +472,14 @@ export interface AgentRun {
   input?: string | null;
   output?: string | null;
   error?: string | null;
+  /**
+   * Guardrails flagged this run (prompt-injection and/or redactions).
+   */
+  flagged?: boolean | null;
+  /**
+   * Comma-separated guardrail reasons (e.g. prompt-injection:dan, email).
+   */
+  flagReasons?: string | null;
   session?: (number | null) | ChatSession;
   startedAt?: string | null;
   completedAt?: string | null;
@@ -947,6 +959,7 @@ export interface AgentsSelect<T extends boolean = true> {
   capabilities?: T;
   tools?: T;
   runAccess?: T;
+  safetyMode?: T;
   user?: T;
   provider?: T;
   model?: T;
@@ -965,6 +978,8 @@ export interface AgentRunsSelect<T extends boolean = true> {
   input?: T;
   output?: T;
   error?: T;
+  flagged?: T;
+  flagReasons?: T;
   session?: T;
   startedAt?: T;
   completedAt?: T;

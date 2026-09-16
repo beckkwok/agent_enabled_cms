@@ -16,6 +16,7 @@ import { resolveAgentModel } from './model'
 import { buildAgentTools } from './skills/langchain'
 import type { SkillContext } from './skills/types'
 import { loadSessionHistory } from './memory'
+import { GuardrailError, redactOutput, scanInput } from './guardrails'
 import { actingUserOf, contentToText, loadAgent, resolveSession } from './shared'
 
 export type RunTrigger = NonNullable<AgentRun['triggeredBy']>
@@ -166,6 +167,27 @@ export async function runSingleShot({
       sessionId,
     )
 
+    const safetyMode = agent.safetyMode ?? 'monitor'
+    const inputScan = safetyMode !== 'off' ? scanInput(input) : { flagged: false, reasons: [] }
+
+    if (safetyMode === 'enforce' && inputScan.flagged) {
+      await payload
+        .update({
+          collection: 'agent-runs',
+          id: run.id,
+          data: {
+            status: 'failed',
+            error: `Blocked by guardrails: ${inputScan.reasons.join(', ')}`,
+            flagged: true,
+            flagReasons: inputScan.reasons.join(', '),
+            completedAt: new Date().toISOString(),
+          },
+          overrideAccess: true,
+        })
+        .catch(() => undefined)
+      throw new GuardrailError(inputScan.reasons)
+    }
+
     const baseModel = modelOverride ?? resolveAgentModel(agent)
     const model = tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
 
@@ -176,7 +198,17 @@ export async function runSingleShot({
       messages,
       tools,
     )
-    const output = contentToText(response.content)
+
+    let output = contentToText(response.content)
+    const redactions: string[] = []
+    if (safetyMode !== 'off') {
+      const redacted = redactOutput(output)
+      output = redacted.text
+      redactions.push(...redacted.redactions)
+    }
+
+    const flagged = inputScan.flagged || redactions.length > 0
+    const flagReasons = [...inputScan.reasons, ...redactions].join(', ')
 
     const session = await resolveSession(payload, agentId, sessionId)
 
@@ -199,6 +231,8 @@ export async function runSingleShot({
         output,
         completedAt: new Date().toISOString(),
         session: session.id,
+        flagged,
+        flagReasons,
       },
       overrideAccess: true,
     })

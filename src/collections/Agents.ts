@@ -106,6 +106,21 @@ export const Agents: CollectionConfig = {
       },
     },
     {
+      name: 'safetyMode',
+      type: 'select',
+      defaultValue: 'monitor',
+      index: true,
+      options: [
+        { label: 'Off', value: 'off' },
+        { label: 'Monitor (log flags)', value: 'monitor' },
+        { label: 'Enforce (block + redact)', value: 'enforce' },
+      ],
+      admin: {
+        description:
+          'Guardrails: scan input for prompt-injection and redact secrets/PII from output. "enforce" also blocks flagged input. See docs/agents.md.',
+      },
+    },
+    {
       name: 'user',
       type: 'relationship',
       relationTo: 'users',

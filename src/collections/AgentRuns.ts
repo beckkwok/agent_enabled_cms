@@ -63,6 +63,22 @@ export const AgentRuns: CollectionConfig = {
       type: 'textarea',
     },
     {
+      name: 'flagged',
+      type: 'checkbox',
+      defaultValue: false,
+      index: true,
+      admin: {
+        description: 'Guardrails flagged this run (prompt-injection and/or redactions).',
+      },
+    },
+    {
+      name: 'flagReasons',
+      type: 'textarea',
+      admin: {
+        description: 'Comma-separated guardrail reasons (e.g. prompt-injection:dan, email).',
+      },
+    },
+    {
       name: 'session',
       type: 'relationship',
       relationTo: 'chat-sessions',

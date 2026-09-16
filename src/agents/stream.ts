@@ -15,6 +15,7 @@ import {
   MAX_TOOL_ITERATIONS,
   type RunTrigger,
 } from './run'
+import { redactOutput, scanInput } from './guardrails'
 import { contentToText, resolveSession } from './shared'
 
 /** Events emitted by the streaming agent method (SSE `data:` lines). */
@@ -78,6 +79,30 @@ export async function streamAgentRun({
           input,
           sessionId,
         )
+
+        const safetyMode = agent.safetyMode ?? 'monitor'
+        const inputScan = safetyMode !== 'off' ? scanInput(input) : { flagged: false, reasons: [] }
+        const enforce = safetyMode === 'enforce'
+
+        if (enforce && inputScan.flagged) {
+          await payload
+            .update({
+              collection: 'agent-runs',
+              id: run.id,
+              data: {
+                status: 'failed',
+                error: `Blocked by guardrails: ${inputScan.reasons.join(', ')}`,
+                flagged: true,
+                flagReasons: inputScan.reasons.join(', '),
+                completedAt: new Date().toISOString(),
+              },
+              overrideAccess: true,
+            })
+            .catch(() => undefined)
+          send({ type: 'error', message: `Blocked by guardrails: ${inputScan.reasons.join(', ')}` })
+          return
+        }
+
         const baseModel = modelOverride ?? resolveAgentModel(agent)
         const model =
           tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
@@ -97,7 +122,8 @@ export async function streamAgentRun({
             const text = contentToText(aiChunk.content)
             if (text) {
               output += text
-              send({ type: 'token', content: text })
+              // In enforce mode we buffer and redact before emitting tokens.
+              if (!enforce) send({ type: 'token', content: text })
             }
           }
 
@@ -118,6 +144,18 @@ export async function streamAgentRun({
           iterations += 1
         }
 
+        const redactions: string[] = []
+        let finalOutput = output
+        if (safetyMode !== 'off') {
+          const redacted = redactOutput(output)
+          finalOutput = redacted.text
+          redactions.push(...redacted.redactions)
+        }
+        if (enforce) send({ type: 'token', content: finalOutput })
+
+        const flagged = inputScan.flagged || redactions.length > 0
+        const flagReasons = [...inputScan.reasons, ...redactions].join(', ')
+
         const session = await resolveSession(payload, agentId, sessionId)
 
         await payload.create({
@@ -127,7 +165,7 @@ export async function streamAgentRun({
         })
         await payload.create({
           collection: 'chat-messages',
-          data: { session: session.id, role: 'assistant', content: output },
+          data: { session: session.id, role: 'assistant', content: finalOutput },
           overrideAccess: true,
         })
         await payload.update({
@@ -135,14 +173,16 @@ export async function streamAgentRun({
           id: run.id,
           data: {
             status: 'succeeded',
-            output,
+            output: finalOutput,
             completedAt: new Date().toISOString(),
             session: session.id,
+            flagged,
+            flagReasons,
           },
           overrideAccess: true,
         })
 
-        send({ type: 'done', runId: run.id, sessionId: session.sessionId, output })
+        send({ type: 'done', runId: run.id, sessionId: session.sessionId, output: finalOutput })
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         await payload

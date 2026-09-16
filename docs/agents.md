@@ -14,6 +14,7 @@ An agent is **two rows**: its `Agent` config row plus a `User` principal of type
 | `capabilities` | `knowledge` → retrieve context from the `Knowledge` base before answering. |
 | `tools` | CMS skills the agent may call during a run (see below). |
 | `runAccess` | Who may call the run endpoint: `public` / `authenticated` (default) / `admin`. |
+| `safetyMode` | Guardrails: `off` / `monitor` (default) / `enforce`. |
 | `user` | The `User` principal (type `Agent`) the agent acts as; its MCP key is issued against this principal. |
 | `provider` | `Provider` record used for the model. |
 | `model` | Model id from the provider. |
@@ -89,6 +90,27 @@ Content-Type: application/json
 - The framework owns the streaming **method** (`src/agents/stream.ts` → `streamAgentRun`); the **channel** is the application's choice (web SSE, WhatsApp adapter, …). `collectStreamEvents(stream)` drains a stream into events (used by tests/servers).
 - Streaming supports the same `knowledge` capability and access-controlled `tools` as single-shot: tool calls are executed mid-stream, then token streaming resumes.
 
+## Safety & guardrails
+
+`src/agents/guardrails.ts` provides two deterministic heuristics (a first line of defence — not a complete solution):
+
+- `scanInput(text)` — detects prompt-injection / jailbreak patterns (ignore/disregard instructions, reveal system prompt, "you are now", DAN, developer mode, override safety, …).
+- `redactOutput(text)` — strips secrets (OpenAI/Anthropic/AWS/MCP keys, bearer tokens, `api_key=`-style values) and emails from model output before it is returned or persisted.
+
+Per-agent `safetyMode`:
+
+| Mode | Behaviour |
+| --- | --- |
+| `off` | No scanning/redaction. |
+| `monitor` (default) | Scans + redacts; **flags** the run but does not block. |
+| `enforce` | Blocks flagged input (run endpoint → **403**; stream → `error` event) and redacts output. In streaming enforce mode tokens are buffered and redacted before being emitted. |
+
+Flagged runs are recorded on the `AgentRun` (`flagged`, `flagReasons`) — the observability surface for suspicious activity. `flagReasons` combines input reasons (e.g. `prompt-injection:dan`) and redaction names (e.g. `openai-key`).
+
+**Red-team suite:** `tests/unit/guardrails.unit.spec.ts` (injection prompts, secret/PII redaction) + `tests/int/guardrails.int.spec.ts` (enforce blocks + marks failed, redacts output, monitor flags, off passthrough).
+
+**Not covered yet** (see `docs/v1-open-items.md` #9): semantic/LLM-based injection detection, output content policy, rate limiting, human-in-the-loop for high-risk operations, and never putting secrets in the prompt (currently relies on prompts/context not containing them).
+
 ## Queue (`runAgent` task)
 
 Defined in `src/payload.config.ts` (`jobs.tasks`) with the handler in `src/jobs/runAgent.ts`. The task calls `runSingleShot` with the pre-created `runId` and writes results back to `AgentRun`. Jobs are processed in-process by Payload's autorun cron (`jobs.autoRun`, every minute); call `payload.jobs.run()` to drain immediately.
@@ -110,8 +132,8 @@ One row per run: `agent`, `status` (`queued`/`running`/`succeeded`/`failed`), `t
 ## Testing
 
 - `MOCK_EMBEDDINGS=1` → deterministic vectors; `MOCK_LLM=1` → fake chat model.
-- Unit: `tests/unit/agent-access.unit.spec.ts`, `agent-prompt.unit.spec.ts`, `skills.unit.spec.ts`, `stream.unit.spec.ts` (SSE encode/collect), `agent-memory.unit.spec.ts`.
-- Integration: `tests/int/agent-run.int.spec.ts` — runs an agent, asserts `AgentRun` + `ChatMessage`s, and exercises the queue task; `tests/int/agent-tools.int.spec.ts` — the tool-calling loop with a scripted model; `tests/int/agent-stream.int.spec.ts` — streams tokens + persistence; `tests/int/agent-memory.int.spec.ts` — history is loaded and prepended into the prompt.
+- Unit: `tests/unit/agent-access.unit.spec.ts`, `agent-prompt.unit.spec.ts`, `skills.unit.spec.ts`, `stream.unit.spec.ts` (SSE encode/collect), `agent-memory.unit.spec.ts`, `extract.unit.spec.ts`, `guardrails.unit.spec.ts`.
+- Integration: `tests/int/agent-run.int.spec.ts` — runs an agent, asserts `AgentRun` + `ChatMessage`s, and exercises the queue task; `tests/int/agent-tools.int.spec.ts` — the tool-calling loop with a scripted model; `tests/int/agent-stream.int.spec.ts` — streams tokens + persistence; `tests/int/agent-memory.int.spec.ts` — history is loaded and prepended into the prompt; `tests/int/guardrails.int.spec.ts` — safety modes; `tests/int/reindex.int.spec.ts` — ingestion job.
 - e2e: `tests/e2e/agent-run.e2e.spec.ts` — HTTP boundary (validation, 401 for authenticated agents, SSE content type, MCP keyless 401).
 
 ## Not yet implemented
