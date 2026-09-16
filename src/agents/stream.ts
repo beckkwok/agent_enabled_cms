@@ -2,16 +2,19 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import {
   AIMessage,
   AIMessageChunk,
-  HumanMessage,
-  SystemMessage,
   ToolMessage,
-  type BaseMessage,
 } from '@langchain/core/messages'
 import type { Payload } from 'payload'
 import type { AgentRun } from '@/payload-types'
 
 import { resolveAgentModel } from './model'
-import { buildRunContext, executeTool, MAX_TOOL_ITERATIONS, type RunTrigger } from './run'
+import {
+  buildMessages,
+  buildRunContext,
+  executeTool,
+  MAX_TOOL_ITERATIONS,
+  type RunTrigger,
+} from './run'
 import { contentToText, resolveSession } from './shared'
 
 /** Events emitted by the streaming agent method (SSE `data:` lines). */
@@ -69,15 +72,17 @@ export async function streamAgentRun({
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
 
       try {
-        const { agent, tools, systemContent } = await buildRunContext(payload, agentId, input)
+        const { agent, tools, systemContent, history } = await buildRunContext(
+          payload,
+          agentId,
+          input,
+          sessionId,
+        )
         const baseModel = modelOverride ?? resolveAgentModel(agent)
         const model =
           tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
 
-        const messages: BaseMessage[] = [
-          ...(systemContent ? [new SystemMessage(systemContent)] : []),
-          new HumanMessage(input),
-        ]
+        const messages = buildMessages(systemContent, history, input)
 
         let output = ''
         let iterations = 0

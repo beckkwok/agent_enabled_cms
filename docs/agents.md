@@ -97,15 +97,21 @@ Defined in `src/payload.config.ts` (`jobs.tasks`) with the handler in `src/jobs/
 
 One row per run: `agent`, `status` (`queued`/`running`/`succeeded`/`failed`), `triggeredBy` (`api`/`queue`/`schedule`), `input`, `output`, `error`, `session`, `startedAt`, `completedAt`. Admin-only access; written by the runtime with `overrideAccess: true`. **Do not store secrets or customer PII in AgentRun.**
 
-## Chat attribution
+## Conversation memory & attribution
 
-`ChatSession.agent` scopes conversations to an agent (multi-agent-ready). Messages inherit the agent via the session.
+**Storage (server-side, Postgres via Payload):** `ChatSession` (`sessionId`, `agent`) + `ChatMessage` (`session`, `role`, `content`). The client only needs to remember the `sessionId` and send it on each call; the memory itself lives in the framework collections (never in a separate LangChain memory store, to keep one source of truth).
+
+**Short-term memory (implemented):** `src/agents/memory.ts` → `loadSessionHistory(payload, sessionId, limit = 20)` loads the most recent messages and returns them oldest → newest. `buildRunContext` prepends them, so both `/run` and `/stream` send `[system prompt, …prior turns, new input]` to the model. Pass `sessionId` for continuity; omit it for a stateless run.
+
+**Attribution:** `ChatSession.agent` scopes conversations to an agent (multi-agent-ready). Messages inherit the agent via the session.
+
+**Long-term memory** (facts that persist across sessions) is not implemented — see `docs/v1-open-items.md` #12.
 
 ## Testing
 
 - `MOCK_EMBEDDINGS=1` → deterministic vectors; `MOCK_LLM=1` → fake chat model.
-- Unit: `tests/unit/agent-access.unit.spec.ts`, `agent-prompt.unit.spec.ts`, `skills.unit.spec.ts`, `stream.unit.spec.ts` (SSE encode/collect).
-- Integration: `tests/int/agent-run.int.spec.ts` — runs an agent, asserts `AgentRun` + `ChatMessage`s, and exercises the queue task; `tests/int/agent-tools.int.spec.ts` — the tool-calling loop with a scripted model; `tests/int/agent-stream.int.spec.ts` — streams tokens, asserts events + persistence.
+- Unit: `tests/unit/agent-access.unit.spec.ts`, `agent-prompt.unit.spec.ts`, `skills.unit.spec.ts`, `stream.unit.spec.ts` (SSE encode/collect), `agent-memory.unit.spec.ts`.
+- Integration: `tests/int/agent-run.int.spec.ts` — runs an agent, asserts `AgentRun` + `ChatMessage`s, and exercises the queue task; `tests/int/agent-tools.int.spec.ts` — the tool-calling loop with a scripted model; `tests/int/agent-stream.int.spec.ts` — streams tokens + persistence; `tests/int/agent-memory.int.spec.ts` — history is loaded and prepended into the prompt.
 - e2e: `tests/e2e/agent-run.e2e.spec.ts` — HTTP boundary (validation, 401 for authenticated agents, SSE content type, MCP keyless 401).
 
 ## Not yet implemented

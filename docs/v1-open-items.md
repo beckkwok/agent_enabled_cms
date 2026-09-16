@@ -143,3 +143,16 @@ Gaps to resolve:
 - **`searchKnowledge`** is now access-scoped (see #6); the remaining gap is per-role *skill invocation*.
 
 Status: **open** — design the role model first (what a `Role` grants), then apply it consistently to both skill invocation and data access.
+
+## 12. Long-term agent memory (OPEN)
+
+Short-term conversation memory is implemented: `ChatSession`/`ChatMessage` in Postgres, loaded by `loadSessionHistory` (last-N window) and prepended to the prompt (`docs/agents.md`). What's missing is **long-term memory** — facts/preferences that persist *across* sessions and agents.
+
+Options to design:
+- **A dedicated `AgentMemory` collection** (framework-owned) with an embedding column, retrieved like Knowledge (hybrid search) and injected into the prompt. Scope by agent/principal so memory is access-controlled like everything else.
+- **Summarisation** — periodically summarise a session into a compact memory record (bounds context and cost).
+- **Retrieval policy** — when to fetch long-term memory (every run? on relevance?), and how to merge with short-term history + Knowledge context without bloating the prompt.
+
+Constraints: store only non-sensitive summaries; never PII; all writes via PayloadCMS; retrieval must respect the caller's access (same rule as `docs/retrieval.md`).
+
+Status: **open** — decide whether long-term memory is framework-owned (a collection + retriever) or an application concern.

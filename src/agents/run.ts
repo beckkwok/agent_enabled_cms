@@ -15,6 +15,7 @@ import { agentPromptToText } from './prompt'
 import { resolveAgentModel } from './model'
 import { buildAgentTools } from './skills/langchain'
 import type { SkillContext } from './skills/types'
+import { loadSessionHistory } from './memory'
 import { actingUserOf, contentToText, loadAgent, resolveSession } from './shared'
 
 export type RunTrigger = NonNullable<AgentRun['triggeredBy']>
@@ -42,7 +43,12 @@ const MAX_TOOL_ITERATIONS = 5
 export { MAX_TOOL_ITERATIONS }
 
 /** Builds the system prompt + messages and the skill context for a run. */
-export async function buildRunContext(payload: Payload, agentId: number, input: string) {
+export async function buildRunContext(
+  payload: Payload,
+  agentId: number,
+  input: string,
+  sessionId?: string,
+) {
   const agent = await loadAgent(payload, agentId)
   const actingUser = actingUserOf(agent)
 
@@ -60,7 +66,22 @@ export async function buildRunContext(payload: Payload, agentId: number, input: 
   const skillCtx: SkillContext = { payload, user: actingUser }
   const tools = buildAgentTools(agent.tools ?? [], skillCtx)
 
-  return { agent, actingUser, skillCtx, tools, systemContent }
+  const history = await loadSessionHistory(payload, sessionId)
+
+  return { agent, actingUser, skillCtx, tools, systemContent, history }
+}
+
+/** Assembles the message list for a run: system prompt, prior history, new input. */
+export function buildMessages(
+  systemContent: string,
+  history: BaseMessage[],
+  input: string,
+): BaseMessage[] {
+  return [
+    ...(systemContent ? [new SystemMessage(systemContent)] : []),
+    ...history,
+    new HumanMessage(input),
+  ]
 }
 
 /** Executes a tool call and returns a JSON-serializable result (errors captured). */
@@ -138,15 +159,17 @@ export async function runSingleShot({
       })
 
   try {
-    const { agent, tools, systemContent } = await buildRunContext(payload, agentId, input)
+    const { agent, tools, systemContent, history } = await buildRunContext(
+      payload,
+      agentId,
+      input,
+      sessionId,
+    )
 
     const baseModel = modelOverride ?? resolveAgentModel(agent)
     const model = tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
 
-    const messages: BaseMessage[] = [
-      ...(systemContent ? [new SystemMessage(systemContent)] : []),
-      new HumanMessage(input),
-    ]
+    const messages = buildMessages(systemContent, history, input)
 
     const response = await runWithTools(
       model as unknown as { invoke: (input: BaseMessage[]) => Promise<BaseMessage> },
