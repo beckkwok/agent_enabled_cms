@@ -386,6 +386,10 @@ async function main() {
   await seedFramework(payload)
   await seedSampleContent(payload)
 
+  // Knowledge indexing runs in the queue — drain the jobs so the seed ends
+  // with an indexed corpus.
+  await payload.jobs.run({ limit: 50 })
+
   process.exit(0)
 }
 main().catch((err) => {

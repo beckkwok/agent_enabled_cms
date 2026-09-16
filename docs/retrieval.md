@@ -44,7 +44,13 @@ Callers pass the acting identity:
 - `searchKnowledge` skill → the skill context user,
 - blog `/api/ask` retriever → anonymous (so only `public` knowledge).
 
-**Ingestion** is unchanged mechanically (`reindexKnowledge` still chunks/embeds on publish and writes chunks with `overrideAccess: true`), but chunks now only ever belong to a doc whose visibility the retrieval layer enforces.
+**Ingestion (Design A, implemented):** publishing a `Knowledge` doc enqueues a `reindexKnowledge` queue job (`src/jobs/reindexKnowledge.ts`). The job:
+1. resolves the source text — extracted from the uploaded `file` (txt/md/csv/json/html/pdf via `src/lib/extract.ts`) or the `content` field,
+2. deletes old chunks, chunks the text, and embeds in **batches** (`EMBEDDING_BATCH_SIZE = 100`),
+3. writes one `KnowledgeChunk` per chunk (with `overrideAccess: true` — system-generated) + `embedding`/`search_tsv` via raw SQL,
+4. updates the doc's `indexStatus` (`idle`/`pending`/`processing`/`indexed`/`failed`), `chunkCount`, `extractedText`, `indexError`.
+
+Drafts are not indexed (chunks removed). Because indexing is a queue job, large documents don't block the save request; jobs run via Payload autorun or `payload.jobs.run()`. Chunks still only ever belong to a doc whose visibility the retrieval layer enforces.
 
 ### Trade-off / follow-up
 - Resolving allowed ids per query is an extra query and materialises the id set; for very large corpora consider **option D** (denormalize the ACL onto each chunk) to filter in SQL directly.

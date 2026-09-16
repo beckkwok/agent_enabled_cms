@@ -79,18 +79,17 @@ See `docs/retrieval.md` for details and the option-D follow-up (denormalized per
 
 Payload has no runtime/admin schema builder. App collections are added in code at boot + `payload generate:types` + migrations. Full note in `docs/building-applications.md`.
 
-## 8. Large-document ingestion for RAG (DECIDED: A for framework, B = app reference)
+## 8. Large-document ingestion for RAG (Design A IMPLEMENTED; B = app reference)
 
-Current pipeline (`Knowledge` → `chunkText` → `reindexKnowledge` hook → `knowledge-chunks`) handles pasted **text** only and is not built for big uploads (e.g. 1000+ page PDF). Gap analysis:
+### Implemented — Design A (framework baseline)
+- **File upload** on `Knowledge` (`file` → Media) alongside the `content` textarea.
+- **Text extraction** (`src/lib/extract.ts`): txt/md/csv/json/log, HTML (tag-stripped), PDF (`unpdf`). Unsupported types error clearly.
+- **Batched embeddings** (`EMBEDDING_BATCH_SIZE = 100`) so large docs don't exceed provider limits.
+- **Queue-based reindex** — publishing enqueues a `reindexKnowledge` job (`src/jobs/reindexKnowledge.ts`); the save request no longer blocks.
+- **Status fields** on `Knowledge`: `indexStatus`, `chunkCount`, `extractedText`, `indexError`.
 
-- **No file upload.** `Knowledge.content` is a textarea; no PDF/upload field or text-extraction step exists.
-- **`embedTexts` sends the whole array in one call** (`src/lib/embeddings.ts:44-49`) — a 1000+ page doc yields 10k–50k chunks, blowing past per-request/rate limits. Needs internal batching + retries.
-- **Indexing is synchronous in the `afterChange` hook** (`reindexKnowledge.ts`) — large docs hang the save request. Should route through the Payload queue.
-- Chunking itself is fine (800 chars / 200 overlap, boundary-snapped).
-
-### Decision
-- **Design A (quick) → framework baseline.** Implement in the core framework: upload/file field on `Knowledge`, text extraction for common formats, batched `embedTexts`, reindex as a Payload queue job, and document status fields. See plan A outline in this repo.
-- **Design B (flexible) → application reference only.** Full ingestion pipeline (per-source extractors/OCR, per-page provenance, `IngestionRun` history, Provider-driven embedding, Document visibility × access control) is documented for apps that need large corporate document handling. Reference: `docs/large-document-ingestion.md`. App developers build it **on top of** the framework per `docs/building-applications.md` — it must not modify framework-owned schema.
+### Deferred — Design B (app reference only)
+Full pipeline (per-source extractors/OCR, per-page provenance, `IngestionRun` history, Provider-driven embedding, Document visibility × access control) remains an app-layer reference: `docs/large-document-ingestion.md`. Apps build it **on top of** the framework per `docs/building-applications.md`.
 
 ### When to use which (guide)
 - **`Knowledge` (framework, Design A)**: small–medium, text-oriented sources — a large text blob, `.md` file, plain/text-based PDF, or hand-maintained reference notes. Admin can paste or upload the file; pipeline chunks + embeds it directly. No page-level provenance or heavy structure expected.

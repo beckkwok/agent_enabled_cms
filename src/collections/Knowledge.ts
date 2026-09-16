@@ -8,14 +8,14 @@ import {
 import {
   deleteKnowledgeChunks,
   deleteKnowledgeChunksBefore,
-  reindexKnowledge,
+  enqueueReindex,
 } from './hooks/reindexKnowledge'
 
 export const Knowledge: CollectionConfig = {
   slug: 'knowledge',
   admin: {
     useAsTitle: 'title',
-    defaultColumns: ['title', 'visibility', 'updatedAt'],
+    defaultColumns: ['title', 'visibility', 'indexStatus', 'chunkCount', 'updatedAt'],
     group: 'Framework',
   },
   access: {
@@ -34,7 +34,7 @@ export const Knowledge: CollectionConfig = {
         return data
       },
     ],
-    afterChange: [reindexKnowledge],
+    afterChange: [enqueueReindex],
     beforeDelete: [deleteKnowledgeChunksBefore],
     afterDelete: [deleteKnowledgeChunks],
   },
@@ -51,11 +51,19 @@ export const Knowledge: CollectionConfig = {
     {
       name: 'content',
       type: 'textarea',
-      required: true,
       admin: {
         description:
-          'Source text that will be chunked and embedded for retrieval-augmented generation (the agent knowledge base). ' +
+          'Source text (alternative to uploading a file). Chunked and embedded for retrieval. ' +
           'Store only internal/knowledge documents here — do NOT put personal or customer data in this collection.',
+      },
+    },
+    {
+      name: 'file',
+      type: 'upload',
+      relationTo: 'media',
+      admin: {
+        description:
+          'Optional source file (txt, md, csv, json, html, pdf). Text is extracted, chunked and embedded on publish.',
       },
     },
     {
@@ -99,6 +107,41 @@ export const Knowledge: CollectionConfig = {
       admin: {
         description: 'Roles allowed to retrieve this document when visibility is `role`.',
       },
+    },
+    {
+      name: 'extractedText',
+      type: 'textarea',
+      admin: {
+        readOnly: true,
+        description: 'Plain text actually used for indexing (extracted from the file, or the content field).',
+      },
+    },
+    {
+      name: 'indexStatus',
+      type: 'select',
+      defaultValue: 'idle',
+      index: true,
+      options: [
+        { label: 'Idle', value: 'idle' },
+        { label: 'Pending', value: 'pending' },
+        { label: 'Processing', value: 'processing' },
+        { label: 'Indexed', value: 'indexed' },
+        { label: 'Failed', value: 'failed' },
+      ],
+      admin: {
+        description: 'Indexing state, maintained by the reindex queue job.',
+      },
+    },
+    {
+      name: 'chunkCount',
+      type: 'number',
+      defaultValue: 0,
+      admin: { readOnly: true },
+    },
+    {
+      name: 'indexError',
+      type: 'textarea',
+      admin: { readOnly: true },
     },
   ],
 }

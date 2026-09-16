@@ -120,6 +120,7 @@ export interface Config {
   jobs: {
     tasks: {
       runAgent: TaskRunAgent;
+      reindexKnowledge: TaskReindexKnowledge;
       inline: {
         input: unknown;
         output: unknown;
@@ -274,9 +275,13 @@ export interface Knowledge {
   id: number;
   title: string;
   /**
-   * Source text that will be chunked and embedded for retrieval-augmented generation (the agent knowledge base). Store only internal/knowledge documents here — do NOT put personal or customer data in this collection.
+   * Source text (alternative to uploading a file). Chunked and embedded for retrieval. Store only internal/knowledge documents here — do NOT put personal or customer data in this collection.
    */
-  content: string;
+  content?: string | null;
+  /**
+   * Optional source file (txt, md, csv, json, html, pdf). Text is extracted, chunked and embedded on publish.
+   */
+  file?: (number | null) | Media;
   /**
    * Optional link to the original source (e.g. the blog post URL).
    */
@@ -293,6 +298,16 @@ export interface Knowledge {
    * Roles allowed to retrieve this document when visibility is `role`.
    */
   allowedRoles?: (number | Role)[] | null;
+  /**
+   * Plain text actually used for indexing (extracted from the file, or the content field).
+   */
+  extractedText?: string | null;
+  /**
+   * Indexing state, maintained by the reindex queue job.
+   */
+  indexStatus?: ('idle' | 'pending' | 'processing' | 'indexed' | 'failed') | null;
+  chunkCount?: number | null;
+  indexError?: string | null;
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
@@ -625,7 +640,7 @@ export interface PayloadJob {
     | {
         executedAt: string;
         completedAt: string;
-        taskSlug: 'inline' | 'runAgent';
+        taskSlug: 'inline' | 'runAgent' | 'reindexKnowledge';
         taskID: string;
         input?:
           | {
@@ -658,7 +673,7 @@ export interface PayloadJob {
         id?: string | null;
       }[]
     | null;
-  taskSlug?: ('inline' | 'runAgent') | null;
+  taskSlug?: ('inline' | 'runAgent' | 'reindexKnowledge') | null;
   queue?: string | null;
   waitUntil?: string | null;
   processing?: boolean | null;
@@ -845,10 +860,15 @@ export interface BlogPostsSelect<T extends boolean = true> {
 export interface KnowledgeSelect<T extends boolean = true> {
   title?: T;
   content?: T;
+  file?: T;
   sourceUrl?: T;
   visibility?: T;
   owner?: T;
   allowedRoles?: T;
+  extractedText?: T;
+  indexStatus?: T;
+  chunkCount?: T;
+  indexError?: T;
   updatedAt?: T;
   createdAt?: T;
   _status?: T;
@@ -1110,6 +1130,19 @@ export interface TaskRunAgent {
     runId?: number | null;
     sessionId?: string | null;
     output?: string | null;
+  };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "TaskReindexKnowledge".
+ */
+export interface TaskReindexKnowledge {
+  input: {
+    knowledgeId: number;
+  };
+  output: {
+    chunkCount?: number | null;
+    status?: string | null;
   };
 }
 /**

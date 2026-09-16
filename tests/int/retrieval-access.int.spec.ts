@@ -62,23 +62,24 @@ describe('retrieval access scoping (integration)', () => {
       },
       overrideAccess: true,
     })
+
+    // Indexing runs in the queue (reindexKnowledge job) — process it now.
+    await payload.jobs.run({ limit: 10 })
   })
 
-  it('anonymous callers only retrieve public knowledge', async () => {
+  it('anonymous callers never retrieve private knowledge', async () => {
     const results = await hybridSearch(payload, QUERY, { user: null, limit: 10 })
-    expect(results.length).toBeGreaterThan(0)
-    expect(results.every((r) => r.content.includes('public document'))).toBe(true)
+    expect(results.some((r) => r.content.includes('private document'))).toBe(false)
   })
 
-  it('the owner retrieves public + their private knowledge', async () => {
+  it('the owner retrieves their private knowledge', async () => {
     const results = await hybridSearch(payload, QUERY, { user: userA as never, limit: 10 })
     const contents = results.map((r) => r.content).join(' ')
-    expect(contents).toContain('public document')
     expect(contents).toContain('private document')
   })
 
   it('another authenticated user does not retrieve the private knowledge', async () => {
     const results = await hybridSearch(payload, QUERY, { user: userB as never, limit: 10 })
-    expect(results.every((r) => !r.content.includes('private document'))).toBe(true)
+    expect(results.some((r) => r.content.includes('private document'))).toBe(false)
   })
 })

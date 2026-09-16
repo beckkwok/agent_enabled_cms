@@ -20,6 +20,7 @@ import { ChatMessage } from './collections/ChatMessage'
 import { pgVectorSchemaHook } from './collections/helpers/pgvector'
 import { ensureSearchTsvColumn } from './collections/helpers/searchTsv'
 import { runAgentTask } from './jobs/runAgent'
+import { reindexKnowledgeTask } from './jobs/reindexKnowledge'
 import { SKILLS } from './agents/skills'
 import { migrations } from './migrations'
 
@@ -56,6 +57,16 @@ export default buildConfig({
           { name: 'output', type: 'textarea' },
         ],
         handler: runAgentTask,
+      },
+      {
+        slug: 'reindexKnowledge',
+        label: 'Reindex knowledge',
+        inputSchema: [{ name: 'knowledgeId', type: 'number', required: true }],
+        outputSchema: [
+          { name: 'chunkCount', type: 'number' },
+          { name: 'status', type: 'text' },
+        ],
+        handler: reindexKnowledgeTask,
       },
     ],
     // Process queued jobs in-process. Tune/replace with an external worker as needed.
