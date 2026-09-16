@@ -18,7 +18,12 @@ export function getOpenAIClient(): OpenAI {
   if (!envClient) {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not set. Add it to your .env file.')
+      // Embeddings are mandatory for Knowledge ingestion/retrieval unless
+      // MOCK_EMBEDDINGS=1. Fail loudly with an actionable message.
+      throw new Error(
+        '[AACMS] OPENAI_API_KEY is not set — embeddings cannot run. ' +
+          'Set OPENAI_API_KEY, or set MOCK_EMBEDDINGS=1 for deterministic mock vectors.',
+      )
     }
     envClient = new OpenAI({ apiKey })
   }

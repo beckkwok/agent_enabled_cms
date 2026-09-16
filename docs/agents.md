@@ -124,6 +124,8 @@ Applications add their own input/output patterns — e.g. a bank detecting accou
 
 Invalid regexes are ignored safely. Rules apply only when the agent's `safetyMode` is not `off`.
 
+**Default rules:** a data migration (`20260916_180000_default_guardrails`) installs starter rules — `credit-card`, `us-ssn`, `iban` (all `both`/`redact`). They are normal collection rows: edit or disable them in the admin, and add your own.
+
 Flagged runs are recorded on `AgentRun` (`flagged`, `flagReasons` — e.g. `prompt-injection:dan, custom:bank-acct, configured-secret`).
 
 **Red-team suite:** `tests/unit/guardrails.unit.spec.ts`, `tests/unit/guardrail-engine.unit.spec.ts`, `tests/unit/semantic-guard.unit.spec.ts`, `tests/int/guardrails.int.spec.ts`, `tests/int/guardrails-config.int.spec.ts`.

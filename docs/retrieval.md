@@ -44,6 +44,8 @@ Callers pass the acting identity:
 - `searchKnowledge` skill → the skill context user,
 - blog `/api/ask` retriever → anonymous (so only `public` knowledge).
 
+**Embedding key (env):** ingestion and query embeddings use `OPENAI_API_KEY` (via `src/lib/embeddings.ts`). It is **mandatory unless `MOCK_EMBEDDINGS=1`** (deterministic mock vectors). If the key is missing and mocking is off, the server logs a warning at boot (`onInit`) and embeddings fail loudly at runtime. Embeddings are not yet wired to the `Provider` collection (open item).
+
 **Ingestion (Design A, implemented):** publishing a `Knowledge` doc enqueues a `reindexKnowledge` queue job (`src/jobs/reindexKnowledge.ts`). The job:
 1. resolves the source text — extracted from the uploaded `file` (txt/md/csv/json/html/pdf via `src/lib/extract.ts`) or the `content` field,
 2. deletes old chunks, chunks the text, and embeds in **batches** (`EMBEDDING_BATCH_SIZE = 100`),

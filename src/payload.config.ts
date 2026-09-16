@@ -88,6 +88,17 @@ export default buildConfig({
   }),
   onInit: async (payload) => {
     await ensureSearchTsvColumn(payload)
+
+    // Alert: embeddings (Knowledge ingestion + retrieval) need a key unless
+    // mock embeddings are enabled. Surface it at boot, not only on first use.
+    const mockEmbeddings = process.env.MOCK_EMBEDDINGS === '1'
+    if (!mockEmbeddings && !process.env.OPENAI_API_KEY) {
+      payload.logger.warn(
+        '[AACMS] OPENAI_API_KEY is not set and MOCK_EMBEDDINGS is not "1" — ' +
+          'Knowledge ingestion and retrieval embeddings will FAIL at runtime. ' +
+          'Set OPENAI_API_KEY (or MOCK_EMBEDDINGS=1 for deterministic mock vectors).',
+      )
+    }
   },
   plugins: [
     mcpPlugin({
