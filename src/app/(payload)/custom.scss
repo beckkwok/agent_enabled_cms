@@ -7,11 +7,8 @@
  * field to avoid misleading affordances.
  */
 .api-key {
-  &__toggle-button-wrap {
-    display: none;
-  }
-
-  &__label .copy-to-clipboard {
-    display: none;
+  .api-key__toggle-button-wrap,
+  .copy-to-clipboard {
+    display: none !important;
   }
 }
