@@ -137,6 +137,8 @@ The `Provider.apiKey` field is now masked **server-side** — the plaintext neve
 
 Remaining (minor): rotate/validate keys, and a "reveal" admin action if ever needed.
 
+**MCP API keys are also masked server-side** (the same policy applied to the plugin's `payload-mcp-api-keys` collection via `overrideApiKeyCollection`): the raw key never reaches the browser; trusted reads use `context: { revealApiKey: true }`, and submitting the mask preserves the stored key + HMAC index. See `docs/mcp-connectivity.md`.
+
 ## 11. Role-based authorization for skills and data (OPEN)
 
 Two access layers exist and only one is currently role-aware (see `docs/agents.md`):

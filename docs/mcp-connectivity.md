@@ -43,6 +43,10 @@ In addition to the collection/global CRUD tools, AACMS registers framework **ski
 
 Each tool handler receives `(args, req)` and runs the skill with `{ payload: req.payload, user: req.user }` using `overrideAccess: false`, so the API-key owner's access rules gate the call. Per-key allow/disallow lives in the **MCP → API Keys** collection (`payload_mcp_tool_*` fields).
 
+## API key storage & masking
+
+MCP keys are stored by the plugin as an encrypted `apiKey` + an HMAC `apiKeyIndex` (lookup). The key field is **masked server-side** via `overrideApiKeyCollection` (`src/payload.config.ts`): `afterRead` returns a bullet mask instead of the raw key, so Payload's admin API-key component (and any REST response) never exposes the plaintext. Trusted server reads reveal it with `context: { revealApiKey: true }`. On save, submitting the mask preserves the stored key and recomputes the HMAC index — so MCP auth keeps working. Verified by `tests/int/mcp-key-mask.int.spec.ts`.
+
 ## Decision: agent API-key policy (recorded for implementation)
 
 - **One API key per agent** — best flexibility and clean audit identity per agent (conversations/tool calls attributable to a single key owner).
