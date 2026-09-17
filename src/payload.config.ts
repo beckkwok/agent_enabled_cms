@@ -1,6 +1,7 @@
 import { postgresAdapter } from '@payloadcms/db-postgres'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { mcpPlugin } from '@payloadcms/plugin-mcp'
+import crypto from 'node:crypto'
 import path from 'path'
 import { buildConfig } from 'payload'
 import { fileURLToPath } from 'url'
@@ -23,6 +24,7 @@ import { ensureSearchTsvColumn } from './collections/helpers/searchTsv'
 import { runAgentTask } from './jobs/runAgent'
 import { reindexKnowledgeTask } from './jobs/reindexKnowledge'
 import { SKILLS } from './agents/skills'
+import { API_KEY_MASK } from './lib/api-key-mask'
 import { migrations } from './migrations'
 
 const filename = fileURLToPath(import.meta.url)
@@ -149,6 +151,54 @@ export default buildConfig({
             ],
           }),
         })),
+      },
+      // Mask the MCP API key server-side so the plaintext never reaches the
+      // browser (Payload's built-in API-key component keeps it in form state
+      // otherwise). Trusted reads opt in with `context: { revealApiKey: true }`.
+      overrideApiKeyCollection: (collection) => {
+        collection.hooks = {
+          ...collection.hooks,
+          afterRead: [
+            ...(collection.hooks?.afterRead ?? []),
+            ({ doc, req }) => {
+              const reveal = (req?.context as { revealApiKey?: boolean } | undefined)?.revealApiKey
+              if (!reveal && doc && typeof doc.apiKey === 'string' && doc.apiKey.length > 0) {
+                doc.apiKey = API_KEY_MASK
+              }
+              return doc
+            },
+          ],
+          beforeChange: [
+            ...(collection.hooks?.beforeChange ?? []),
+            async ({ data, req, operation, originalDoc }) => {
+              // The client submits the mask when the key is unchanged. Restore
+              // the stored key (and its HMAC index) so the field doesn't get
+              // overwritten with the mask.
+              if (data?.apiKey === API_KEY_MASK) {
+                const id = (originalDoc as { id?: number } | undefined)?.id
+                if (id && operation === 'update') {
+                  const existing = (await req.payload.findByID({
+                    collection: 'payload-mcp-api-keys',
+                    id,
+                    depth: 0,
+                    overrideAccess: true,
+                    context: { revealApiKey: true },
+                  })) as { apiKey?: null | string }
+                  const raw = existing?.apiKey
+                  if (raw) {
+                    data.apiKey = raw
+                    data.apiKeyIndex = crypto
+                      .createHmac('sha256', req.payload.secret)
+                      .update(raw)
+                      .digest('hex')
+                  }
+                }
+              }
+              return data
+            },
+          ],
+        }
+        return collection
       },
     }),
   ],
