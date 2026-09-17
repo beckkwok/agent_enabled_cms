@@ -151,7 +151,11 @@ Gaps to resolve:
 - **Role-aware data rules** — collection `access` functions consult `User.role` only for `Knowledge` so far (via `allowedRoles` + `visibility: role`); other collections still use user-*type* rules (`publicCollectionAccess` / `privateCollectionAccess`). Extend a consistent role model across collections.
 - **`searchKnowledge`** is now access-scoped (see #6); the remaining gap is per-role *skill invocation*.
 
-Status: **open** — design the role model first (what a `Role` grants), then apply it consistently to both skill invocation and data access.
+Status: **partially implemented.** Skill *invocation* is now role/type-aware: a `Skill` may declare `requiredUserTypes` / `requiredRoles`, enforced by `authorizeSkill` (`src/agents/skills/authorize.ts`) before the handler runs, in both the agent runtime and MCP (Admins always pass). Tests: `tests/unit/skill-authorize.unit.spec.ts`, `tests/int/skill-authorize.int.spec.ts`.
+
+Remaining:
+- **Role-aware *data* rules** — collection `access` functions still use user-*type* rules (`publicCollectionAccess` / `privateCollectionAccess`) except `Knowledge` (which uses `visibility` + `allowedRoles`). Extend a consistent role model across collections.
+- A `Role`→permissions model (what a Role grants), rather than name checks.
 
 ## 12. Long-term agent memory (OPEN)
 

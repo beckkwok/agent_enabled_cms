@@ -1,13 +1,14 @@
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { z } from 'zod'
 
+import { runSkill } from './authorize'
 import { getSkill } from './index'
 import type { SkillContext } from './types'
 
 /**
  * Builds LangChain tools for the given skill names, bound to the run's
- * context (payload + acting user) so skill calls are access-controlled.
- * Unknown skill names are ignored.
+ * context (payload + acting user) so skill calls are authorized and
+ * access-controlled. Unknown skill names are ignored.
  */
 export function buildAgentTools(
   toolNames: string[],
@@ -20,15 +21,11 @@ export function buildAgentTools(
     if (!skill) continue
 
     tools.push(
-      tool(
-        async (args: Record<string, unknown>) =>
-          JSON.stringify(await skill.handler(args, ctx)),
-        {
-          name: skill.name,
-          description: skill.description,
-          schema: z.object(skill.parameters),
-        },
-      ) as StructuredToolInterface,
+      tool(async (args: Record<string, unknown>) => JSON.stringify(await runSkill(skill, args, ctx)), {
+        name: skill.name,
+        description: skill.description,
+        schema: z.object(skill.parameters),
+      }) as StructuredToolInterface,
     )
   }
 

@@ -20,5 +20,15 @@ export type Skill = {
   description: string
   /** Zod raw shape for the skill arguments. */
   parameters: z.ZodRawShape
+  /**
+   * Optional authorization: the acting principal's user type must be one of
+   * these (e.g. `['Admin']`). Admins always pass. Omit for "any principal".
+   */
+  requiredUserTypes?: string[]
+  /**
+   * Optional authorization: the acting principal's Role name must be one of
+   * these. Admins always pass. Omit for "any role".
+   */
+  requiredRoles?: string[]
   handler: (args: Record<string, unknown>, ctx: SkillContext) => Promise<unknown>
 }

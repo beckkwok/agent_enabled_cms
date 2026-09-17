@@ -42,12 +42,23 @@ Skills are the CMS operations agents (and external MCP clients) may call. The sa
 
 **Access control — two distinct layers:**
 
-1. **Skill invocation** (who may call a skill): controlled by the admin-configured `Agent.tools` (runs) and the per-key MCP tool toggles (`payload_mcp_tool_*`). This is *not* currently role-aware — there is no per-role skill authorization yet (`docs/v1-open-items.md` #11).
+1. **Skill invocation** (who may call a skill): controlled by the admin-configured `Agent.tools` (runs), the per-key MCP tool toggles (`payload_mcp_tool_*`), **and** optional per-skill authorization (`requiredUserTypes` / `requiredRoles`).
 2. **Skill data** (what a skill may return/change): skills call Payload with `overrideAccess: false` + `user` = the acting principal (the agent's `User` principal for runs, or the MCP key owner). Collection `access` rules therefore gate every Payload read/write. Skills must not use `overrideAccess: true`.
 
-All four skills are access-limited: `listContent`/`getContent`/`countContent` go through Payload directly, and `searchKnowledge` scopes retrieval to the Knowledge ids the caller may read (`docs/retrieval.md`, design A+B).
+### Skill authorization (`requiredUserTypes` / `requiredRoles`)
 
-> Also note the current collection rules are coarse (user-*type* based: `publicCollectionAccess` / `privateCollectionAccess`), and `User.role` is not consulted anywhere yet. Fine-grained role gating for skills and data is a follow-up (see `docs/v1-open-items.md`).
+A `Skill` may declare who is allowed to call it; `authorizeSkill` (`src/agents/skills/authorize.ts`) enforces it **before the handler runs**, in both the agent runtime and the MCP server:
+
+- **Admins always pass.**
+- `requiredUserTypes: ['Admin']` → only that user type.
+- `requiredRoles: ['finance']` → the acting principal's Role **name** must match (a role id is resolved via Payload).
+- No requirements → any principal.
+
+On denial the skill returns `{ error: '…' }` and the handler is **not** called. This is separate from data access — the skill still runs with `overrideAccess: false`, so collection rules apply too.
+
+All four framework skills are access-limited: `listContent`/`getContent`/`countContent` go through Payload directly, and `searchKnowledge` scopes retrieval to the Knowledge ids the caller may read (`docs/retrieval.md`, design A+B).
+
+> Collection `access` rules are still coarse (user-*type* based: `publicCollectionAccess` / `privateCollectionAccess`); extending the role model to *data* rules is a follow-up (see `docs/v1-open-items.md` #11).
 
 **Framework skills (v1):**
 

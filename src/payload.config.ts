@@ -24,6 +24,7 @@ import { ensureSearchTsvColumn } from './collections/helpers/searchTsv'
 import { runAgentTask } from './jobs/runAgent'
 import { reindexKnowledgeTask } from './jobs/reindexKnowledge'
 import { SKILLS } from './agents/skills'
+import { runSkill } from './agents/skills/authorize'
 import { API_KEY_MASK } from './lib/api-key-mask'
 import { migrations } from './migrations'
 
@@ -145,7 +146,7 @@ export default buildConfig({
               {
                 type: 'text' as const,
                 text: JSON.stringify(
-                  await skill.handler(args, { payload: req.payload, user: req.user }),
+                  await runSkill(skill, args, { payload: req.payload, user: req.user }),
                 ),
               },
             ],

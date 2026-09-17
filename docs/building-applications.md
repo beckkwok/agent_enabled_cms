@@ -96,6 +96,7 @@ Registering is all that's needed — the framework then:
 - **Write a strong `description`** — it's the model's primary signal for choosing the tool.
 - **Validate/limit inputs** (bounds on `limit`, etc.).
 - **Do not use `overrideAccess: true`** except in genuinely system-generated writes.
+- **Optionally gate invocation**: set `requiredUserTypes: ['Admin']` or `requiredRoles: ['finance']` on the skill to restrict who may call it (Admins always pass). Enforced by `authorizeSkill` before the handler runs, in both the agent runtime and MCP. See `docs/agents.md`.
 
 ### 4. Enabling a skill for an agent
 
