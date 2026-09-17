@@ -14,6 +14,9 @@ export async function loadAgent(payload: Payload, agentId: number): Promise<Load
     id: agentId,
     depth: 1,
     overrideAccess: true,
+    // Trusted server read: reveal the provider's plaintext key (the field is
+    // masked by default so it never reaches the browser).
+    context: { revealApiKey: true },
   })) as unknown as LoadedAgent
 }
 

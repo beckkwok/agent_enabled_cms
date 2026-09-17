@@ -1,6 +1,7 @@
 import type { CollectionConfig } from 'payload'
 
 import { adminCollectionAccess, isAdmin } from './helpers/access'
+import { API_KEY_MASK, isMaskedApiKey } from '@/lib/api-key-mask'
 
 export const Providers: CollectionConfig = {
   slug: 'providers',
@@ -71,20 +72,43 @@ export const Providers: CollectionConfig = {
         update: isAdmin,
       },
       hooks: {
-        // Encrypt at rest (AES-256-CTR via PAYLOAD_SECRET), decrypt on read —
-        // the same mechanism Payload uses for auth API keys.
+        // Encrypt at rest (AES-256-CTR via PAYLOAD_SECRET). On read, only
+        // reveal the plaintext for trusted server-side reads that opt in with
+        // `context: { revealApiKey: true }`; otherwise return a sentinel so the
+        // key never reaches the browser / API responses.
         beforeChange: [
-          ({ value, req }) =>
-            typeof value === 'string' && value.length > 0 ? req.payload.encrypt(value) : value,
+          async ({ value, operation, originalDoc, req }) => {
+            if (isMaskedApiKey(value)) {
+              // Unchanged (client submitted the mask) — re-read the stored key
+              // server-side (revealed) and re-encrypt it, so the plaintext never
+              // round-trips through the browser.
+              const id = (originalDoc as { id?: number } | undefined)?.id
+              if (!id || operation !== 'update') return null
+              const existing = await req.payload.findByID({
+                collection: 'providers',
+                id,
+                depth: 0,
+                overrideAccess: true,
+                context: { revealApiKey: true },
+              })
+              const current = (existing as { apiKey?: null | string }).apiKey
+              return current ? req.payload.encrypt(current) : null
+            }
+            if (value === null || value === undefined || value === '') return value
+            return req.payload.encrypt(String(value))
+          },
         ],
         afterRead: [
-          ({ value, req }) =>
-            typeof value === 'string' && value.length > 0 ? req.payload.decrypt(value) : value,
+          ({ value, req }) => {
+            if (typeof value !== 'string' || value.length === 0) return value
+            const reveal = (req?.context as { revealApiKey?: boolean } | undefined)?.revealApiKey
+            return reveal ? req.payload.decrypt(value) : API_KEY_MASK
+          },
         ],
       },
       admin: {
         description:
-          'Optional: paste the provider API key here (stored encrypted). Use keyRef for env/secret-manager instead. Only Admins can read or edit this.',
+          'Optional: paste the provider API key here (stored encrypted; never returned to the browser). Use keyRef for env/secret-manager instead. Only Admins can edit this.',
         components: {
           Field: '/components/admin/ApiKeyField#ApiKeyField',
         },

@@ -126,18 +126,16 @@ Remaining:
 
 > Note the inherent limit: detection is heuristic (regex/entropy) plus an optional model. Guardrails are defence-in-depth; the real boundary is tool/data access control + not putting secrets in context.
 
-## 10. Provider API key: true server-side masking (ENHANCEMENT — not good practice currently)
+## 10. Provider API key: true server-side masking (RESOLVED)
 
-The `Provider.apiKey` admin field (`src/components/admin/ApiKeyField.tsx`) masks the key **presentationally only**: `afterRead` decrypts the stored value, so the plaintext key is present in the Admin browser's page source / form state and can be viewed via view-source or devtools. Acceptable for Admin-only access, but not good practice.
+The `Provider.apiKey` field is now masked **server-side** — the plaintext never reaches the browser:
 
-Enhancement: make the plaintext never reach the browser.
-- `afterRead` returns a **sentinel/masked marker** (e.g. `'__STORED__'` or a boolean `hasKey`) instead of decrypting.
-- The custom component renders the mask + replace input from the sentinel.
-- `beforeChange`: if the submitted value equals the sentinel → keep the previously stored encrypted value; if empty → clear; otherwise encrypt the new value.
-- The runtime resolver (`resolveProviderApiKey`) must decrypt **server-side** (read the stored value directly / via local API with a trusted context), since it no longer receives plaintext from a normal read.
-- Verify `Provider` reads via MCP/REST never expose plaintext for non-Admins (already blocked by field access, but re-check with the sentinel approach).
+- `afterRead` returns a sentinel (`API_KEY_MASK`, `src/lib/api-key-mask.ts`) instead of decrypting. Trusted server reads opt in with `context: { revealApiKey: true }` (e.g. `loadAgent`, guardrail secret loading).
+- `beforeChange`: submitting the sentinel re-reads the stored key server-side (revealed) and re-encrypts it; an empty value clears; anything else is encrypted as a new key.
+- The admin component (`src/components/admin/ApiKeyField.tsx`) renders the mask + replace input from the sentinel (no plaintext in form state / page source).
+- Verified: `tests/unit/providers-field.unit.spec.ts`, `tests/int/provider-mask.int.spec.ts`.
 
-Status: **open enhancement** — current masking is presentational only. See also #9 (credential leakage).
+Remaining (minor): rotate/validate keys, and a "reveal" admin action if ever needed.
 
 ## 11. Role-based authorization for skills and data (OPEN)
 

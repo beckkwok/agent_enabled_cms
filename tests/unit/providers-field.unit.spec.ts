@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { describe, it, expect } from 'vitest'
 
 import { Providers } from '@/collections/Providers'
+import { API_KEY_MASK } from '@/lib/api-key-mask'
 
 /**
  * Payload's encrypt/decrypt (auth/crypto.js): AES-256-CTR with a random
@@ -24,7 +25,13 @@ function decrypt(hash: string): string {
   return decipher.update(content, 'hex', 'utf8') + decipher.final('utf8')
 }
 
-type Hook = (args: { value: unknown; req: unknown }) => unknown
+type Hook = (args: {
+  value: unknown
+  previousValue?: unknown
+  operation?: string
+  originalDoc?: unknown
+  req: unknown
+}) => unknown
 
 function getApiKeyField() {
   const field = (Providers.fields as unknown as { name?: string }[]).find(
@@ -37,28 +44,64 @@ function getApiKeyField() {
   }
 }
 
-const mockReq = { payload: { encrypt, decrypt } }
+const mockReq = { payload: { encrypt, decrypt }, context: {} }
+const revealReq = { payload: { encrypt, decrypt }, context: { revealApiKey: true } }
 
 describe('Providers.apiKey field', () => {
-  it('encrypts on write and never stores plaintext', () => {
+  it('encrypts on write and never stores plaintext', async () => {
     const field = getApiKeyField()
-    const stored = field.hooks.beforeChange[0]({ value: 'sk-secret-value', req: mockReq }) as string
+    const stored = (await field.hooks.beforeChange[0]({
+      value: 'sk-secret-value',
+      req: mockReq,
+    })) as string
     expect(stored).not.toBe('sk-secret-value')
     expect(stored.length).toBeGreaterThan('sk-secret-value'.length)
   })
 
-  it('round-trips: encrypted value decrypts back to the original', () => {
+  it('masks the value on a normal read (no plaintext to the browser)', () => {
     const field = getApiKeyField()
-    const stored = field.hooks.beforeChange[0]({ value: 'sk-secret-value', req: mockReq }) as string
-    const read = field.hooks.afterRead[0]({ value: stored, req: mockReq })
-    expect(read).toBe('sk-secret-value')
+    const stored = encrypt('sk-secret-value')
+    expect(field.hooks.afterRead[0]({ value: stored, req: mockReq })).toBe(API_KEY_MASK)
   })
 
-  it('passes empty / non-string values through untouched', () => {
+  it('reveals the value only for trusted reads (revealApiKey context)', () => {
     const field = getApiKeyField()
-    expect(field.hooks.beforeChange[0]({ value: '', req: mockReq })).toBe('')
-    expect(field.hooks.beforeChange[0]({ value: null, req: mockReq })).toBe(null)
+    const stored = encrypt('sk-secret-value')
+    expect(field.hooks.afterRead[0]({ value: stored, req: revealReq })).toBe('sk-secret-value')
+  })
+
+  it('re-encrypts the stored key when the mask is submitted unchanged', async () => {
+    const field = getApiKeyField()
+    const req = {
+      payload: {
+        encrypt,
+        decrypt,
+        findByID: async () => ({ apiKey: 'sk-secret-value' }),
+      },
+      context: {},
+    }
+    const result = (await field.hooks.beforeChange[0]({
+      value: API_KEY_MASK,
+      operation: 'update',
+      originalDoc: { id: 1 },
+      req,
+    })) as string
+    expect(decrypt(result)).toBe('sk-secret-value')
+  })
+
+  it('clears when empty and encrypts a new value', async () => {
+    const field = getApiKeyField()
+    expect(await field.hooks.beforeChange[0]({ value: '', previousValue: 'x', req: mockReq })).toBe(
+      '',
+    )
+    const stored = (await field.hooks.beforeChange[0]({ value: 'sk-new', req: mockReq })) as string
+    expect(decrypt(stored)).toBe('sk-new')
+  })
+
+  it('passes empty / undefined reads through untouched', () => {
+    const field = getApiKeyField()
     expect(field.hooks.afterRead[0]({ value: undefined, req: mockReq })).toBe(undefined)
+    expect(field.hooks.afterRead[0]({ value: '', req: mockReq })).toBe('')
   })
 
   it('restricts read/create/update to Admin principals', () => {

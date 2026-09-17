@@ -74,6 +74,8 @@ async function loadConfiguredSecrets(payload: Payload): Promise<string[]> {
     limit: 100,
     depth: 0,
     overrideAccess: true,
+    // Trusted server read: reveal plaintext keys so they can be redacted.
+    context: { revealApiKey: true },
   })
 
   const secrets: string[] = []

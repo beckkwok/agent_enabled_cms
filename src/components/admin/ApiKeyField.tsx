@@ -11,13 +11,14 @@ const MASK = '••••••••'
 /**
  * Masked field component for provider API keys.
  *
- * The stored key is never displayed. When a key exists the user sees a mask
- * plus a "Replace key" control that reveals a password input to enter a new
- * value (and a "Clear" control to remove it). If no key is set, the password
- * input is shown directly.
+ * The server returns a sentinel (never the plaintext), so the browser never
+ * sees the stored key. When a key exists the user sees a mask plus a "Replace
+ * key" control that reveals a password input to enter a new value (and a
+ * "Clear" control to remove it). If no key is set, the password input is shown
+ * directly.
  *
- * The value itself stays in Payload form state (Admin-only field access), so
- * an untouched key is preserved on save; only a replacement changes it.
+ * On save, an untouched value (still the sentinel) is preserved server-side;
+ * only a replacement or clear changes it.
  */
 export const ApiKeyField: TextFieldClientComponent = ({ field, path, readOnly }) => {
   const { setValue, showError, value } = useField<string>({ path })
@@ -26,7 +27,6 @@ export const ApiKeyField: TextFieldClientComponent = ({ field, path, readOnly })
 
   const hasValue = typeof value === 'string' && value.length > 0
   const isEditing = replacing || (!hasValue && !readOnly)
-  const last4 = hasValue ? value.slice(-4) : ''
 
   function commit() {
     setValue(draft.trim())
@@ -52,10 +52,7 @@ export const ApiKeyField: TextFieldClientComponent = ({ field, path, readOnly })
       <div className="api-key-field">
         {hasValue && !isEditing && (
           <div className="api-key-field__masked">
-            <code className="api-key-field__value">
-              {MASK}
-              {last4}
-            </code>
+            <code className="api-key-field__value">{MASK}</code>
             {!readOnly && (
               <div className="api-key-field__actions">
                 <button
