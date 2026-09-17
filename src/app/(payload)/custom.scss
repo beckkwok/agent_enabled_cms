@@ -1,0 +1,17 @@
+/*
+ * AACMS admin custom styles.
+ *
+ * The MCP API key is masked server-side (see docs/mcp-connectivity.md): the
+ * raw key is never sent to the browser, so revealing or copying it is not
+ * possible. Hide Payload's built-in eye toggle and copy control on the API-key
+ * field to avoid misleading affordances.
+ */
+.api-key {
+  &__toggle-button-wrap {
+    display: none;
+  }
+
+  &__label .copy-to-clipboard {
+    display: none;
+  }
+}
