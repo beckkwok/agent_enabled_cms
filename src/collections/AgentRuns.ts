@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
-import { adminOnlyAccess } from './helpers/access'
+import { isAdmin, requirePermission } from './helpers/access'
 
 /**
  * Simple trace of an agent run: one row per invocation, written by the agent
@@ -17,7 +17,14 @@ export const AgentRuns: CollectionConfig = {
     group: 'Agent',
     defaultColumns: ['agent', 'status', 'triggeredBy', 'createdAt'],
   },
-  access: adminOnlyAccess,
+  access: {
+    create: isAdmin,
+    // Read requires the `runs.read` permission (admins always pass) so a
+    // reporting role can be granted observability without full admin access.
+    read: requirePermission('runs.read'),
+    update: isAdmin,
+    delete: isAdmin,
+  },
   fields: [
     {
       name: 'agent',

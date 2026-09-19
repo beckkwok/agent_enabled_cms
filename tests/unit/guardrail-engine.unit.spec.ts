@@ -90,3 +90,44 @@ describe('guardrail engine — custom rules', () => {
     expect(engine.scanInput('anything').blocked).toBe(false)
   })
 })
+
+describe('guardrail engine — output content policy', () => {
+  it('flags and blocks output matching an output block rule', async () => {
+    const engine = await createGuardrailEngine({
+      payload: mockPayload([
+        { name: 'no-refund-promise', direction: 'output', action: 'block', pattern: 'guarantee a full refund' },
+      ]),
+      safetyMode: 'enforce',
+    })
+    const policy = engine.evaluateOutputPolicy('I guarantee a full refund')
+    expect(policy.flagged).toBe(true)
+    expect(policy.blocked).toBe(true)
+    expect(policy.reasons).toContain('policy:no-refund-promise')
+  })
+
+  it('flag action flags but does not block', async () => {
+    const engine = await createGuardrailEngine({
+      payload: mockPayload([{ name: 'watch', direction: 'output', action: 'flag', pattern: 'competitor' }]),
+      safetyMode: 'enforce',
+    })
+    const policy = engine.evaluateOutputPolicy('mentions a competitor')
+    expect(policy.flagged).toBe(true)
+    expect(policy.blocked).toBe(false)
+  })
+
+  it('ignores input-direction rules when evaluating output', async () => {
+    const engine = await createGuardrailEngine({
+      payload: mockPayload([{ name: 'input-only', direction: 'input', action: 'block', pattern: 'guarantee' }]),
+      safetyMode: 'enforce',
+    })
+    expect(engine.evaluateOutputPolicy('I guarantee a full refund').flagged).toBe(false)
+  })
+
+  it('ignores redact-action rules when evaluating output', async () => {
+    const engine = await createGuardrailEngine({
+      payload: mockPayload([{ name: 'mask', direction: 'output', action: 'redact', pattern: 'guarantee' }]),
+      safetyMode: 'enforce',
+    })
+    expect(engine.evaluateOutputPolicy('I guarantee a full refund').flagged).toBe(false)
+  })
+})

@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
-import { adminCollectionAccess } from './helpers/access'
+import { adminCollectionAccess, PERMISSIONS } from './helpers/access'
 
 export const Roles: CollectionConfig = {
   slug: 'roles',
@@ -21,6 +21,17 @@ export const Roles: CollectionConfig = {
     {
       name: 'description',
       type: 'textarea',
+    },
+    {
+      name: 'permissions',
+      type: 'select',
+      hasMany: true,
+      defaultValue: [],
+      options: PERMISSIONS.map((permission) => ({ label: permission, value: permission })),
+      admin: {
+        description:
+          'What this role grants. Used by collection access rules via `requirePermission`. Admins always have full access.',
+      },
     },
   ],
 }

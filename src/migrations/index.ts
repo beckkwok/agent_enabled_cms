@@ -8,6 +8,10 @@ import * as migration_20260916_163015 from './20260916_163015';
 import * as migration_20260916_165824 from './20260916_165824';
 import * as migration_20260916_171922 from './20260916_171922';
 import * as migration_20260916_180000_default_guardrails from './20260916_180000_default_guardrails';
+import * as migration_20260919_000000_agent_memory from './20260919_000000_agent_memory';
+import * as migration_20260919_010000_role_permissions from './20260919_010000_role_permissions';
+import * as migration_20260919_020000_evaluation from './20260919_020000_evaluation';
+import * as migration_20260919_030000_eval_gate from './20260919_030000_eval_gate';
 
 export const migrations = [
   {
@@ -59,5 +63,25 @@ export const migrations = [
     up: migration_20260916_180000_default_guardrails.up,
     down: migration_20260916_180000_default_guardrails.down,
     name: '20260916_180000_default_guardrails'
+  },
+  {
+    up: migration_20260919_000000_agent_memory.up,
+    down: migration_20260919_000000_agent_memory.down,
+    name: '20260919_000000_agent_memory'
+  },
+  {
+    up: migration_20260919_010000_role_permissions.up,
+    down: migration_20260919_010000_role_permissions.down,
+    name: '20260919_010000_role_permissions'
+  },
+  {
+    up: migration_20260919_020000_evaluation.up,
+    down: migration_20260919_020000_evaluation.down,
+    name: '20260919_020000_evaluation'
+  },
+  {
+    up: migration_20260919_030000_eval_gate.up,
+    down: migration_20260919_030000_eval_gate.down,
+    name: '20260919_030000_eval_gate'
   },
 ];

@@ -118,6 +118,16 @@ and commit the migration. Removing a skill that an `Agent` still references will
 - **Unit**: call `skill.handler(args, { payload, user })` and assert it passes `overrideAccess: false` + `user` (see `tests/unit/skills.unit.spec.ts`).
 - **Integration**: run an agent with the skill via a scripted model (`tests/int/agent-tools.int.spec.ts`) and assert the `AgentRun` + result.
 
+## Role → permissions (data access)
+
+Collection `access` is role-aware via `requirePermission` (`src/collections/helpers/access.ts`). Admins always pass; otherwise the acting principal's `Role` must grant a matching permission key (`Roles.permissions`, e.g. `content.write`, `runs.read`). To gate your own collections:
+
+1. Add your permission key to `PERMISSIONS` (and the `Roles.permissions` select options) in `src/collections/helpers/access.ts` + `src/collections/Roles.ts`.
+2. Use it in your collection: `access: { create: requirePermission('orders.write'), read: () => true, … }`.
+3. Grant it to roles via the admin (Roles → permissions), or in your seed.
+
+This keeps the trust boundary: a principal can only read/write what its role grants. Never bypass it with `overrideAccess: true` in skills or endpoints.
+
 ## Guardrail rules (application-specific safety)
 
 Applications can add their own input/output detection patterns via the **`Guardrails`** collection (admin) — no code change. Each rule is a regex with a `direction` (`input`/`output`/`both`), an `action` (`flag`/`block`/`redact`), an optional `agent` scope, and an `enabled` toggle. Examples: detect account numbers in input, mask PII in output.

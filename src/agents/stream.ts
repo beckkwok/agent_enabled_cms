@@ -13,10 +13,13 @@ import {
   buildRunContext,
   executeTool,
   MAX_TOOL_ITERATIONS,
+  sanitizeRunMessages,
   type RunTrigger,
 } from './run'
 import { createGuardrailEngine } from './guardrail-engine'
+import { notifyFlaggedRun } from './alerts'
 import { classifyInjection } from './semantic-guard'
+import { maybeSummarizeSession } from '@/lib/agent-memory'
 import { contentToText, resolveSession } from './shared'
 
 /** Events emitted by the streaming agent method (SSE `data:` lines). */
@@ -112,6 +115,7 @@ export async function streamAgentRun({
               overrideAccess: true,
             })
             .catch(() => undefined)
+          await notifyFlaggedRun(payload, { runId: run.id, agentId, blocked: true, reasons: inputScan.reasons })
           send({ type: 'error', message: `Blocked by guardrails: ${inputScan.reasons.join(', ')}` })
           return
         }
@@ -119,7 +123,9 @@ export async function streamAgentRun({
         const model =
           tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
 
-        const messages = buildMessages(systemContent, history, input)
+        const sanitized = sanitizeRunMessages(engine, systemContent, history, input)
+
+        const messages = buildMessages(sanitized.systemContent, sanitized.history, sanitized.input)
 
         let output = ''
         let iterations = 0
@@ -157,16 +163,48 @@ export async function streamAgentRun({
         }
 
         const redactions: string[] = []
+        const policyReasons: string[] = []
+        let outputBlocked = false
         let finalOutput = output
         if (safetyMode !== 'off') {
+          const policy = engine.evaluateOutputPolicy(output)
+          policyReasons.push(...policy.reasons)
+          outputBlocked = policy.blocked
+
           const redacted = engine.redactOutput(output)
           finalOutput = redacted.text
           redactions.push(...redacted.redactions)
         }
+
+        if (enforce && outputBlocked) {
+          await payload
+            .update({
+              collection: 'agent-runs',
+              id: run.id,
+              data: {
+                status: 'failed',
+                error: `Blocked by guardrails (output): ${policyReasons.join(', ')}`,
+                flagged: true,
+                flagReasons: [...inputScan.reasons, ...sanitized.redactions, ...policyReasons].join(', '),
+                completedAt: new Date().toISOString(),
+              },
+              overrideAccess: true,
+            })
+            .catch(() => undefined)
+          await notifyFlaggedRun(payload, { runId: run.id, agentId, blocked: true, reasons: policyReasons })
+          send({ type: 'error', message: `Blocked by guardrails (output): ${policyReasons.join(', ')}` })
+          return
+        }
+
         if (enforce) send({ type: 'token', content: finalOutput })
 
-        const flagged = inputScan.flagged || redactions.length > 0
-        const flagReasons = [...inputScan.reasons, ...redactions].join(', ')
+        const reasons = [...inputScan.reasons, ...sanitized.redactions, ...policyReasons, ...redactions]
+        const flagged =
+          inputScan.flagged ||
+          sanitized.redactions.length > 0 ||
+          policyReasons.length > 0 ||
+          redactions.length > 0
+        const flagReasons = reasons.join(', ')
 
         const session = await resolveSession(payload, agentId, sessionId)
 
@@ -193,6 +231,14 @@ export async function streamAgentRun({
           },
           overrideAccess: true,
         })
+
+        if (flagged) {
+          await notifyFlaggedRun(payload, { runId: run.id, agentId, blocked: false, reasons })
+        }
+
+        if (agent.capabilities?.includes('memory')) {
+          await maybeSummarizeSession(payload, agentId, session.sessionId).catch(() => undefined)
+        }
 
         send({ type: 'done', runId: run.id, sessionId: session.sessionId, output: finalOutput })
       } catch (err) {

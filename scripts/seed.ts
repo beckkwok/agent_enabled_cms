@@ -5,6 +5,8 @@ import { randomBytes } from 'node:crypto'
 import { getPayload, type Payload } from 'payload'
 import config from '../src/payload.config'
 import { plainTextToLexical } from '../src/lib/lexical'
+import { PERMISSIONS, type Permission } from '../src/collections/helpers/access'
+import { handoffMcpKey } from '../src/lib/mcp-key-handoff'
 
 /**
  * Seeds the AACMS framework baseline and sample content.
@@ -39,10 +41,10 @@ const ADMIN_KEY_CAPABILITIES = {
 } as const
 
 async function seedRoles(payload: Payload) {
-  const defaults = [
-    { name: 'admin', description: 'Administrator — full access to framework config.' },
-    { name: 'user', description: 'Regular human user.' },
-    { name: 'agent', description: 'Agent principal role — access control for agents.' },
+  const defaults: { name: string; description: string; permissions: Permission[] }[] = [
+    { name: 'admin', description: 'Administrator — full access to framework config.', permissions: [...PERMISSIONS] },
+    { name: 'user', description: 'Regular human user.', permissions: ['content.write'] },
+    { name: 'agent', description: 'Agent principal role — access control for agents.', permissions: [] },
   ]
   const seeded: string[] = []
   for (const role of defaults) {
@@ -270,6 +272,7 @@ async function seedMcpKey(
   // returns so the printed value is guaranteed to authenticate.
   const rawKey = created.apiKey || apiKey
   console.log(`Created MCP key "${label}" (id ${created.id})`)
+  await handoffMcpKey({ label, key: rawKey, userId })
   return rawKey
 }
 
@@ -291,8 +294,9 @@ async function seedFramework(payload: Payload) {
     capabilities: ADMIN_KEY_CAPABILITIES,
   })
 
-  if (agentKey) console.log(`\n=== SAVE THIS ONCE — agent MCP key (${'agent-default'}) ===\n${agentKey}\n`)
-  if (fallbackKey) console.log(`\n=== SAVE THIS ONCE — default/fallback MCP key ===\n${fallbackKey}\n`)
+  // Keys are handed off (printed once by default, or written to a secret store
+  // via setMcpKeyHandoff) inside seedMcpKey — nothing else to emit here.
+  return { agentKey, fallbackKey }
 }
 
 async function seedSampleContent(payload: Payload) {

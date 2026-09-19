@@ -79,7 +79,11 @@ export interface Config {
     providers: Provider;
     agents: Agent;
     'agent-runs': AgentRun;
+    'agent-memories': AgentMemory;
     guardrails: Guardrail;
+    'eval-cases': EvalCase;
+    'eval-runs': EvalRun;
+    'eval-results': EvalResult;
     'payload-mcp-api-keys': PayloadMcpApiKey;
     'payload-kv': PayloadKv;
     'payload-jobs': PayloadJob;
@@ -100,7 +104,11 @@ export interface Config {
     providers: ProvidersSelect<false> | ProvidersSelect<true>;
     agents: AgentsSelect<false> | AgentsSelect<true>;
     'agent-runs': AgentRunsSelect<false> | AgentRunsSelect<true>;
+    'agent-memories': AgentMemoriesSelect<false> | AgentMemoriesSelect<true>;
     guardrails: GuardrailsSelect<false> | GuardrailsSelect<true>;
+    'eval-cases': EvalCasesSelect<false> | EvalCasesSelect<true>;
+    'eval-runs': EvalRunsSelect<false> | EvalRunsSelect<true>;
+    'eval-results': EvalResultsSelect<false> | EvalResultsSelect<true>;
     'payload-mcp-api-keys': PayloadMcpApiKeysSelect<false> | PayloadMcpApiKeysSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-jobs': PayloadJobsSelect<false> | PayloadJobsSelect<true>;
@@ -123,6 +131,9 @@ export interface Config {
     tasks: {
       runAgent: TaskRunAgent;
       reindexKnowledge: TaskReindexKnowledge;
+      indexMemory: TaskIndexMemory;
+      summarizeMemory: TaskSummarizeMemory;
+      runEval: TaskRunEval;
       inline: {
         input: unknown;
         output: unknown;
@@ -206,6 +217,10 @@ export interface Role {
   id: number;
   name: string;
   description?: string | null;
+  /**
+   * What this role grants. Used by collection access rules via `requirePermission`. Admins always have full access.
+   */
+  permissions?: ('content.write' | 'runs.read')[] | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -338,6 +353,10 @@ export interface ChatSession {
    * Agent this conversation belongs to (agent-scoped chat history).
    */
   agent?: (number | null) | Agent;
+  /**
+   * Number of messages already folded into long-term memory by the summarisation job.
+   */
+  summarizedCount?: number | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -360,13 +379,13 @@ export interface Agent {
    */
   status: 'active' | 'inactive';
   /**
-   * What the agent can do. "knowledge" retrieves context from the framework Knowledge base before answering.
+   * What the agent can do. "knowledge" retrieves context from the framework Knowledge base; "memory" retrieves the agent's long-term memory before answering.
    */
-  capabilities?: 'knowledge'[] | null;
+  capabilities?: ('knowledge' | 'memory')[] | null;
   /**
    * CMS skills the agent may call during a run. Calls run as the agent principal, so access rules apply.
    */
-  tools?: ('searchKnowledge' | 'listContent' | 'getContent' | 'countContent')[] | null;
+  tools?: ('searchKnowledge' | 'listContent' | 'getContent' | 'countContent' | 'saveMemory')[] | null;
   /**
    * Who may call POST /api/agents/:id/run. Use "public" for customer-facing FAQ agents; "admin" for agents that touch sensitive data.
    */
@@ -379,6 +398,10 @@ export interface Agent {
    * Opt-in: also run a semantic (model-based) prompt-injection check on input. Costs an extra model call per run; off by default.
    */
   semanticSafety?: boolean | null;
+  /**
+   * Opt-in: when true, a failing evaluation gate (EvalRun.gatePassed = false) deactivates this agent.
+   */
+  gateEnforced?: boolean | null;
   /**
    * The User principal (type Agent) this agent acts as for access control / MCP keys. The MCP access key is issued against this principal in the admin MCP → API Keys collection — never store the key itself on this record.
    */
@@ -443,7 +466,7 @@ export interface Provider {
    */
   keyRef?: string | null;
   /**
-   * Optional: paste the provider API key here (stored encrypted). Use keyRef for env/secret-manager instead. Only Admins can read or edit this.
+   * Optional: paste the provider API key here (stored encrypted; never returned to the browser). Use keyRef for env/secret-manager instead. Only Admins can edit this.
    */
   apiKey?: string | null;
   /**
@@ -494,6 +517,35 @@ export interface AgentRun {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "agent-memories".
+ */
+export interface AgentMemory {
+  id: number;
+  /**
+   * The agent this memory belongs to.
+   */
+  agent: number | Agent;
+  /**
+   * The agent principal who may read this memory (set automatically).
+   */
+  owner: number | User;
+  /**
+   * Taxonomy: a single fact, a user/agent preference, or a session summary.
+   */
+  kind?: ('fact' | 'preference' | 'summary') | null;
+  /**
+   * Short, non-sensitive memory text. Never store PII or credentials here.
+   */
+  content: string;
+  /**
+   * Optional source session (for memories produced by summarisation).
+   */
+  session?: (number | null) | ChatSession;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "guardrails".
  */
 export interface Guardrail {
@@ -525,6 +577,99 @@ export interface Guardrail {
    */
   agent?: (number | null) | Agent;
   description?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "eval-cases".
+ */
+export interface EvalCase {
+  id: number;
+  name: string;
+  description?: string | null;
+  /**
+   * The agent this case evaluates.
+   */
+  agent: number | Agent;
+  enabled?: boolean | null;
+  /**
+   * Correctness compares the output to `expected`; tool-use asserts `expected` (a skill name) was called; safety asserts the run is flagged (or not) per `expectFlagged`.
+   */
+  type: 'correctness' | 'tool-use' | 'safety';
+  /**
+   * How `expected` is matched for correctness cases. "judge" uses the agent’s model to grade meaning (costs an extra model call).
+   */
+  match?: ('contains' | 'exact' | 'judge') | null;
+  /**
+   * The prompt sent to the agent.
+   */
+  input: string;
+  /**
+   * Reference: the expected answer text (correctness) or the expected skill name (tool-use).
+   */
+  expected?: string | null;
+  /**
+   * Safety: when true, the case passes only if the run is guardrail-flagged/blocked (e.g. a prompt-injection case).
+   */
+  expectFlagged?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "eval-runs".
+ */
+export interface EvalRun {
+  id: number;
+  name: string;
+  agent: number | Agent;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  caseCount?: number | null;
+  passed?: number | null;
+  failed?: number | null;
+  /**
+   * Mean case score 0..1 across the cases.
+   */
+  score?: number | null;
+  /**
+   * Minimum aggregate score (0..1) required to pass the gate.
+   */
+  passThreshold?: number | null;
+  /**
+   * Computed by the runner: score >= passThreshold.
+   */
+  gatePassed?: boolean | null;
+  completedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "eval-results".
+ */
+export interface EvalResult {
+  id: number;
+  evalRun: number | EvalRun;
+  case: number | EvalCase;
+  agent?: (number | null) | Agent;
+  /**
+   * The AgentRun trace produced for this case.
+   */
+  agentRun?: (number | null) | AgentRun;
+  output?: string | null;
+  /**
+   * JSON array of tool calls the model made.
+   */
+  toolCalls?: string | null;
+  flagged?: boolean | null;
+  flagReasons?: string | null;
+  pass?: boolean | null;
+  score?: number | null;
+  /**
+   * Why the case passed or failed.
+   */
+  reasons?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -617,6 +762,10 @@ export interface PayloadMcpApiKey {
      * Count published blog posts (reporting example).
      */
     countContent?: boolean | null;
+    /**
+     * Save a short, non-sensitive fact or preference to long-term memory for use in future conversations. Do not store secrets, credentials, or personal data.
+     */
+    saveMemory?: boolean | null;
   };
   updatedAt: string;
   createdAt: string;
@@ -694,7 +843,7 @@ export interface PayloadJob {
     | {
         executedAt: string;
         completedAt: string;
-        taskSlug: 'inline' | 'runAgent' | 'reindexKnowledge';
+        taskSlug: 'inline' | 'runAgent' | 'reindexKnowledge' | 'indexMemory' | 'summarizeMemory' | 'runEval';
         taskID: string;
         input?:
           | {
@@ -727,7 +876,7 @@ export interface PayloadJob {
         id?: string | null;
       }[]
     | null;
-  taskSlug?: ('inline' | 'runAgent' | 'reindexKnowledge') | null;
+  taskSlug?: ('inline' | 'runAgent' | 'reindexKnowledge' | 'indexMemory' | 'summarizeMemory' | 'runEval') | null;
   queue?: string | null;
   waitUntil?: string | null;
   processing?: boolean | null;
@@ -786,8 +935,24 @@ export interface PayloadLockedDocument {
         value: number | AgentRun;
       } | null)
     | ({
+        relationTo: 'agent-memories';
+        value: number | AgentMemory;
+      } | null)
+    | ({
         relationTo: 'guardrails';
         value: number | Guardrail;
+      } | null)
+    | ({
+        relationTo: 'eval-cases';
+        value: number | EvalCase;
+      } | null)
+    | ({
+        relationTo: 'eval-runs';
+        value: number | EvalRun;
+      } | null)
+    | ({
+        relationTo: 'eval-results';
+        value: number | EvalResult;
       } | null)
     | ({
         relationTo: 'payload-mcp-api-keys';
@@ -950,6 +1115,7 @@ export interface KnowledgeChunksSelect<T extends boolean = true> {
 export interface ChatSessionsSelect<T extends boolean = true> {
   sessionId?: T;
   agent?: T;
+  summarizedCount?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -971,6 +1137,7 @@ export interface ChatMessagesSelect<T extends boolean = true> {
 export interface RolesSelect<T extends boolean = true> {
   name?: T;
   description?: T;
+  permissions?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1007,6 +1174,7 @@ export interface AgentsSelect<T extends boolean = true> {
   runAccess?: T;
   safetyMode?: T;
   semanticSafety?: T;
+  gateEnforced?: T;
   user?: T;
   provider?: T;
   model?: T;
@@ -1035,6 +1203,19 @@ export interface AgentRunsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "agent-memories_select".
+ */
+export interface AgentMemoriesSelect<T extends boolean = true> {
+  agent?: T;
+  owner?: T;
+  kind?: T;
+  content?: T;
+  session?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "guardrails_select".
  */
 export interface GuardrailsSelect<T extends boolean = true> {
@@ -1047,6 +1228,60 @@ export interface GuardrailsSelect<T extends boolean = true> {
   replacement?: T;
   agent?: T;
   description?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "eval-cases_select".
+ */
+export interface EvalCasesSelect<T extends boolean = true> {
+  name?: T;
+  description?: T;
+  agent?: T;
+  enabled?: T;
+  type?: T;
+  match?: T;
+  input?: T;
+  expected?: T;
+  expectFlagged?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "eval-runs_select".
+ */
+export interface EvalRunsSelect<T extends boolean = true> {
+  name?: T;
+  agent?: T;
+  status?: T;
+  caseCount?: T;
+  passed?: T;
+  failed?: T;
+  score?: T;
+  passThreshold?: T;
+  gatePassed?: T;
+  completedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "eval-results_select".
+ */
+export interface EvalResultsSelect<T extends boolean = true> {
+  evalRun?: T;
+  case?: T;
+  agent?: T;
+  agentRun?: T;
+  output?: T;
+  toolCalls?: T;
+  flagged?: T;
+  flagReasons?: T;
+  pass?: T;
+  score?: T;
+  reasons?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1106,6 +1341,7 @@ export interface PayloadMcpApiKeysSelect<T extends boolean = true> {
         listContent?: T;
         getContent?: T;
         countContent?: T;
+        saveMemory?: T;
       };
   updatedAt?: T;
   createdAt?: T;
@@ -1221,6 +1457,44 @@ export interface TaskReindexKnowledge {
   };
   output: {
     chunkCount?: number | null;
+    status?: string | null;
+  };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "TaskIndexMemory".
+ */
+export interface TaskIndexMemory {
+  input: {
+    memoryId: number;
+  };
+  output: {
+    status?: string | null;
+  };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "TaskSummarizeMemory".
+ */
+export interface TaskSummarizeMemory {
+  input: {
+    agentId: number;
+    sessionId: string;
+  };
+  output: {
+    memoryId?: number | null;
+    status?: string | null;
+  };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "TaskRunEval".
+ */
+export interface TaskRunEval {
+  input: {
+    evalRunId: number;
+  };
+  output: {
     status?: string | null;
   };
 }

@@ -11,13 +11,15 @@ import type { Payload } from 'payload'
 import type { AgentRun } from '@/payload-types'
 
 import { hybridSearch } from '@/lib/vectorSearch'
+import { searchMemory, maybeSummarizeSession } from '@/lib/agent-memory'
 import { agentPromptToText } from './prompt'
 import { resolveAgentModel } from './model'
 import { buildAgentTools } from './skills/langchain'
 import type { SkillContext } from './skills/types'
 import { loadSessionHistory } from './memory'
 import { GuardrailError } from './guardrails'
-import { createGuardrailEngine } from './guardrail-engine'
+import { createGuardrailEngine, type GuardrailEngine } from './guardrail-engine'
+import { notifyFlaggedRun } from './alerts'
 import { classifyInjection } from './semantic-guard'
 import { actingUserOf, contentToText, loadAgent, resolveSession } from './shared'
 
@@ -39,6 +41,10 @@ export type RunSingleShotResult = {
   runId: number
   output: string
   sessionId: string
+  /** Names/args of the skills the model called during the run (eval signal). */
+  toolCalls: { name: string; args: unknown }[]
+  flagged: boolean
+  flagReasons: string
 }
 
 const MAX_TOOL_ITERATIONS = 5
@@ -62,8 +68,15 @@ export async function buildRunContext(
     context = matches.map((m, i) => `[${i + 1}] ${m.content}`).join('\n\n')
   }
 
+  let memoryContext = ''
+  if (capabilities.includes('memory')) {
+    const memories = await searchMemory(payload, agentId, input, { limit: 3, user: actingUser })
+    memoryContext = memories.map((m, i) => `[${i + 1}] ${m.content}`).join('\n')
+  }
+
   const systemParts = [agentPromptToText(agent.prompt)]
   if (context) systemParts.push(`Context:\n${context}`)
+  if (memoryContext) systemParts.push(`Long-term memory:\n${memoryContext}`)
   const systemContent = systemParts.filter(Boolean).join('\n\n')
 
   const skillCtx: SkillContext = { payload, user: actingUser }
@@ -87,6 +100,55 @@ export function buildMessages(
   ]
 }
 
+export type SanitizedMessages = {
+  systemContent: string
+  history: BaseMessage[]
+  input: string
+  redactions: string[]
+}
+
+/**
+ * Defence-in-depth: redacts secrets out of the outgoing prompt (system prompt
+ * + retrieved context + prior history + new input) before it reaches the
+ * model. A secret that leaked into a Knowledge doc or a prior turn is never
+ * shown to — and therefore cannot be repeated by — the model.
+ *
+ * Redactions are prefixed `prompt:` to distinguish "secret found going in"
+ * from output redaction ("secret found coming out"). The raw input is still
+ * stored verbatim on the trace; only what the model sees is sanitized.
+ */
+export function sanitizeRunMessages(
+  engine: GuardrailEngine,
+  systemContent: string,
+  history: BaseMessage[],
+  input: string,
+): SanitizedMessages {
+  const redactions = new Set<string>()
+
+  const sys = engine.sanitizePrompt(systemContent)
+  sys.redactions.forEach((r) => redactions.add(`prompt:${r}`))
+
+  const sanitizedHistory = history.map((msg) => {
+    if (typeof msg.content !== 'string') return msg
+    const result = engine.sanitizePrompt(msg.content)
+    if (result.redactions.length === 0) return msg
+    result.redactions.forEach((r) => redactions.add(`prompt:${r}`))
+    if (msg instanceof SystemMessage) return new SystemMessage(result.text)
+    if (msg instanceof AIMessage) return new AIMessage(result.text)
+    return new HumanMessage(result.text)
+  })
+
+  const inp = engine.sanitizePrompt(input)
+  inp.redactions.forEach((r) => redactions.add(`prompt:${r}`))
+
+  return {
+    systemContent: sys.text,
+    history: sanitizedHistory,
+    input: inp.text,
+    redactions: [...redactions],
+  }
+}
+
 /** Executes a tool call and returns a JSON-serializable result (errors captured). */
 export async function executeTool(
   tools: StructuredToolInterface[],
@@ -106,7 +168,8 @@ async function runWithTools(
   model: { invoke: (input: BaseMessage[]) => Promise<BaseMessage> },
   messages: BaseMessage[],
   tools: StructuredToolInterface[],
-): Promise<BaseMessage> {
+): Promise<{ response: BaseMessage; toolCalls: { name: string; args: unknown }[] }> {
+  const madeCalls: { name: string; args: unknown }[] = []
   let response = await model.invoke(messages)
   let iterations = 0
 
@@ -114,6 +177,7 @@ async function runWithTools(
     const toolCalls = (response as AIMessage).tool_calls ?? []
     messages.push(response)
     for (const call of toolCalls) {
+      madeCalls.push({ name: call.name, args: call.args })
       const result = await executeTool(tools, call.name, call.args)
       messages.push(
         new ToolMessage({
@@ -127,7 +191,7 @@ async function runWithTools(
     iterations += 1
   }
 
-  return response
+  return { response, toolCalls: madeCalls }
 }
 
 /**
@@ -200,14 +264,17 @@ export async function runSingleShot({
           overrideAccess: true,
         })
         .catch(() => undefined)
+      await notifyFlaggedRun(payload, { runId: run.id, agentId, blocked: true, reasons: inputScan.reasons })
       throw new GuardrailError(inputScan.reasons)
     }
 
     const model = tools.length > 0 && baseModel.bindTools ? baseModel.bindTools(tools) : baseModel
 
-    const messages = buildMessages(systemContent, history, input)
+    const sanitized = sanitizeRunMessages(engine, systemContent, history, input)
 
-    const response = await runWithTools(
+    const messages = buildMessages(sanitized.systemContent, sanitized.history, sanitized.input)
+
+    const { response, toolCalls } = await runWithTools(
       model as unknown as { invoke: (input: BaseMessage[]) => Promise<BaseMessage> },
       messages,
       tools,
@@ -215,14 +282,44 @@ export async function runSingleShot({
 
     let output = contentToText(response.content)
     const redactions: string[] = []
+    const policyReasons: string[] = []
+    let outputBlocked = false
     if (safetyMode !== 'off') {
+      const policy = engine.evaluateOutputPolicy(output)
+      policyReasons.push(...policy.reasons)
+      outputBlocked = policy.blocked
+
       const redacted = engine.redactOutput(output)
       output = redacted.text
       redactions.push(...redacted.redactions)
     }
 
-    const flagged = inputScan.flagged || redactions.length > 0
-    const flagReasons = [...inputScan.reasons, ...redactions].join(', ')
+    if (safetyMode === 'enforce' && outputBlocked) {
+      await payload
+        .update({
+          collection: 'agent-runs',
+          id: run.id,
+          data: {
+            status: 'failed',
+            error: `Blocked by guardrails (output): ${policyReasons.join(', ')}`,
+            flagged: true,
+            flagReasons: [...inputScan.reasons, ...sanitized.redactions, ...policyReasons].join(', '),
+            completedAt: new Date().toISOString(),
+          },
+          overrideAccess: true,
+        })
+        .catch(() => undefined)
+      await notifyFlaggedRun(payload, { runId: run.id, agentId, blocked: true, reasons: policyReasons })
+      throw new GuardrailError(policyReasons)
+    }
+
+    const reasons = [...inputScan.reasons, ...sanitized.redactions, ...policyReasons, ...redactions]
+    const flagged =
+      inputScan.flagged ||
+      sanitized.redactions.length > 0 ||
+      policyReasons.length > 0 ||
+      redactions.length > 0
+    const flagReasons = reasons.join(', ')
 
     const session = await resolveSession(payload, agentId, sessionId)
 
@@ -251,7 +348,15 @@ export async function runSingleShot({
       overrideAccess: true,
     })
 
-    return { runId: run.id, output, sessionId: session.sessionId }
+    if (flagged) {
+      await notifyFlaggedRun(payload, { runId: run.id, agentId, blocked: false, reasons })
+    }
+
+    if (agent.capabilities?.includes('memory')) {
+      await maybeSummarizeSession(payload, agentId, session.sessionId).catch(() => undefined)
+    }
+
+    return { runId: run.id, output, sessionId: session.sessionId, toolCalls, flagged, flagReasons }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     await payload

@@ -9,11 +9,27 @@ Working log for building the first version (AACMS). Each entry records the decis
 - Consequence: AACMS is a Next.js monolith (front-end + admin + API in one), like its base. App projects built on top add collections/tools/views to that same app per `docs/building-applications.md`.
 - **Done (initial scaffold commit):** blog copied and renamed to `agent-enabled-cms`; personal portfolio content stripped (About global, Projects, Contact + their FE pages/seed); `siteConfig` neutralised; RAG assistant persona neutralised; framework collections added (User `type` field + Role, Provider, Agent config referencing a User principal); MCP plugin wired with opt-in reads; legacy blog migrations removed (schema is `push`-driven in dev until core schema is finalised, then generate committed migrations).
 
-## 2. Vector/chunk table write path (NOTED — resolve later)
+## 2. Vector/chunk table write path (RESOLVED — derived-index data)
 
-- Tension: blog writes embeddings via a raw drizzle hook (`reindexKnowledge.ts`), bypassing Payload — which conflicts with AGENTS.md's "never write directly to DB".
-- Open question: does chunk/embedding data count as LangChain-infra data (own write path outside the core-write rule) or must writes flow through a PayloadCMS endpoint/collection?
-- Resolution deferred; record the decision before building the Document/reindex pipeline (roadmap step 2).
+Tension: embeddings are written via raw SQL, which *looks* like it bypasses Payload and the "never write directly to DB" rule.
+
+**Decision: chunk/embedding data is LangChain-infra (a derived, regenerable index), not source-of-truth data.** It has a framework-owned write path that lives in system indexing jobs, with raw SQL **strictly limited to the non-Payload `embedding`/`search_tsv` columns** (pgvector/tsvector, which Payload has no field type for). The corpus source of truth always flows through Payload access control.
+
+Boundary (the actual rule):
+
+| Kind | Write path |
+| --- | --- |
+| **Source-of-truth data** (Knowledge docs, AgentMemory records, business collections) | Always through Payload, access-controlled (`overrideAccess: false` from skills; `overrideAccess: true` only for genuine system writes). |
+| **Derived index data** (chunk rows + `embedding`/`search_tsv`) | System-only queue jobs (`reindexKnowledge`, `indexMemory`), `overrideAccess: true`; the *row* is created via `payload.create` and only the vector/tsv columns are written via raw SQL, in the same transaction. |
+
+Why this is safe:
+
+- The index is **fully regenerable** — delete the chunks/vectors and re-run reindex; nothing of value is lost. It is never the source of truth.
+- The write path is **system-only**: triggered by `afterChange` hooks (enqueue) and run in queue jobs — not callable by users or agents.
+- **Retrieval still goes through access control first**: `hybridSearch` / `searchMemory` resolve the allowed doc ids via `payload.find({ overrideAccess: false, user })` before the raw SQL search runs, so the index never leaks beyond what the access layer permits.
+- The raw SQL is **column-scoped**: only `embedding`/`search_tsv`, on rows that were themselves created through Payload.
+
+Applies equally to Knowledge (`reindexKnowledge`) and long-term memory (`indexMemory`). If embeddings ever need to be first-class Payload-managed fields, that's the option-D follow-up (custom field type) — not needed now.
 
 ## 3. Human ↔ agent streaming method: framework-defined, app-implemented (DECIDED)
 
@@ -28,10 +44,12 @@ Working log for building the first version (AACMS). Each entry records the decis
 - Document the pattern in v1.
 - **Implemented (framework bootstrap):** `scripts/seed.ts` now seeds roles, providers, an admin, an Agent principal + config row, and the per-agent + default/fallback MCP keys (bound to their principals, capability toggles mirroring the MCP plugin config).
 
-### MCP key storage & handoff (clarification + open item)
+### MCP key storage & handoff (RESOLVED — pluggable handoff, manual-copy default)
+
 - **Storage:** `payload_mcp_api_keys.api_key` holds the raw key **encrypted** with `PAYLOAD_SECRET` (reversible, decrypt-on-read); `api_key_index` holds `HMAC-SHA256(secret, key)`. MCP authentication matches on the HMAC index — no decryption is needed to authenticate.
-- **Agent retrieval:** agents do **not** read their key from the CMS. The seed prints the raw key **once**; the operator must copy it into the agent's env/secret store. The CMS verifies, it is not a key vault the agent queries.
-- **Open:** no durable auto-provisioning handoff yet. Options when building agent deployment: (a) manual copy (current, fine for one-man setup); (b) provisioning hook writes the key to a secret store (Vault/SSM/K8s) the agent reads at boot; (c) deploy step injects it. Also note default key read access is **own-keys-only**, so cross-user (admin-issued) keys need `overrideApiKeyCollection` to be re-readable.
+- **Agent retrieval:** agents do **not** read their key from the CMS. The CMS verifies, it is not a key vault the agent queries.
+- **Decision:** the default handoff is **manual copy** (a) — the seed prints the raw key once; the operator copies it into the agent's env/secret store. For automated deployment (b/c — Vault/SSM/K8s write or a deploy-step inject), the framework exposes a pluggable sink: `src/lib/mcp-key-handoff.ts` → `setMcpKeyHandoff(fn)` / `handoffMcpKey({ label, key, userId })`. The seed calls `handoffMcpKey` on every new key; ops register their own sink (write to a secret store) in their seed/deploy script without framework changes.
+- **Caveat:** default key read access is **own-keys-only**, so re-reading an admin-issued key later (for re-provisioning) requires `overrideApiKeyCollection` + `context: { revealApiKey: true }`.
 
 ## 5. User vs Agent: principals-in-User + separate Agent config collection (RESOLVED)
 
@@ -114,15 +132,19 @@ Candidate mitigations (to design later):
 - **Observability** — log/alert on suspicious prompts and on tool calls that touch sensitive collections (feeds conversation logs + `onEvent`).
 - **Human-in-the-loop** for high-risk operations (e.g. confirm before writes/deletes).
 
-Status: **partially implemented.** Guardrails v1 is live (see `docs/agents.md` → "Safety & guardrails"): per-agent `safetyMode` (`off`/`monitor`/`enforce`), built-in prompt-injection detection + secret/PII redaction, an **entropy heuristic** for unlabelled secrets, **CMS-configurable rules** (`Guardrails` collection), **exact-match redaction of configured provider secrets**, and an **opt-in semantic injection check** (`Agent.semanticSafety`, off by default, uses the agent's provider). Run flags on `AgentRun` (`flagged`/`flagReasons`). Red-team suite: `tests/unit/guardrails*.spec.ts`, `tests/unit/semantic-guard.unit.spec.ts`, `tests/int/guardrails*.spec.ts`.
+Status: **implemented.** Guardrails v1 is live (see `docs/agents.md` → "Safety & guardrails"): per-agent `safetyMode` (`off`/`monitor`/`enforce`), built-in prompt-injection detection + secret/PII redaction, an **entropy heuristic** for unlabelled secrets, **CMS-configurable rules** (`Guardrails` collection), **exact-match redaction of configured provider secrets**, an **opt-in semantic injection check** (`Agent.semanticSafety`, off by default, uses the agent's provider), **outgoing-prompt sanitisation** (`sanitizeRunMessages`), **output content policy** (`evaluateOutputPolicy` — `Guardrails` `flag`/`block` rules applied to model output), and **flagged-run alerting** (`notifyFlaggedRun`). Run flags on `AgentRun` (`flagged`/`flagReasons`, with `prompt:`/`policy:`/`custom:` prefixes). Red-team suite: `tests/unit/guardrails*.spec.ts`, `tests/unit/semantic-guard.unit.spec.ts`, `tests/unit/prompt-sanitize.unit.spec.ts`, `tests/int/guardrails*.spec.ts`.
 
-Remaining:
-- **Output content policy** — beyond secrets/PII (toxicity, off-policy claims).
+Follow-ups (rule-based layer is done; these generalise beyond regex):
+- **Semantic output policy** — a model-based toxicity/off-policy classifier on output (mirrors the opt-in `semanticSafety` input check).
+
+Deferred to a later enhancement list:
 - **Rate limiting / abuse throttling** per agent/key.
 - **Human-in-the-loop** for high-risk operations (confirm before writes/deletes).
-- **Scan the outgoing prompt** (defence-in-depth if context ever contains a secret).
-- Wire `onEvent`/conversation logs into alerting for flagged runs.
-- Tune entropy threshold to reduce false positives on hashes/IDs.
+
+Also done (implemented after the list above was written):
+- **Flagged-run alerting** — the runtime calls `notifyFlaggedRun` (`src/agents/alerts.ts`) when a run is flagged or blocked; default logs `warn`/`error` via `payload.logger`, overridable with `setAlertNotifier` (Slack/webhook/…).
+- **Entropy threshold tuning** — `looksLikeSecret` now requires three character classes (upper+lower+digit) and skips hash/ID shapes (`isLikelyHashOrId`: single-case hex, base64 padding/`+`/`/`), reducing false positives on txids/hashes/IDs.
+- **Scan the outgoing prompt** — `sanitizeRunMessages` redacts secrets out of the assembled system prompt + context + history + input before it reaches the model (`engine.sanitizePrompt`, secret-only — PII/emails are left intact). A secret that leaked into a Knowledge doc or a prior turn is never shown to the model. Reason prefix `prompt:` on `flagReasons` distinguishes "secret going in" from output redaction.
 
 > Note the inherent limit: detection is heuristic (regex/entropy) plus an optional model. Guardrails are defence-in-depth; the real boundary is tool/data access control + not putting secrets in context.
 
@@ -139,33 +161,48 @@ Remaining (minor): rotate/validate keys, and a "reveal" admin action if ever nee
 
 **MCP API keys are also masked server-side** (the same policy applied to the plugin's `payload-mcp-api-keys` collection via `overrideApiKeyCollection`): the raw key never reaches the browser; trusted reads use `context: { revealApiKey: true }`, and submitting the mask preserves the stored key + HMAC index. See `docs/mcp-connectivity.md`.
 
-## 11. Role-based authorization for skills and data (OPEN)
+## 11. Role-based authorization for skills and data (IMPLEMENTED)
 
-Two access layers exist and only one is currently role-aware (see `docs/agents.md`):
+Two access layers, now both role-aware (see `docs/agents.md`):
 
-1. **Skill invocation** — gated by `Agent.tools` + per-key MCP tool toggles. **Not** role-aware: there is no check like "only Admin agents may call `countContent`".
-2. **Skill data** — skills call Payload with `overrideAccess: false` + `user`, so collection access rules apply. But those rules are coarse (user-*type* based: `publicCollectionAccess` / `privateCollectionAccess`); the `User.role` relationship is not consulted anywhere yet.
+1. **Skill invocation** — gated by `Agent.tools` + per-key MCP tool toggles **and** per-skill `requiredUserTypes` / `requiredRoles` (`authorizeSkill`).
+2. **Skill data** — skills call Payload with `overrideAccess: false` + `user`, so collection access rules apply. Collection rules are now **role-aware via permissions**, not just user-*type*:
 
-Gaps to resolve:
-- **Per-role skill gating** — add a check (e.g. a `skill.access` predicate or `requiredRoles` on each skill) that consults the acting user's `type`/`role` before running, so sensitive skills are Admin-only even when the tool is enabled.
-- **Role-aware data rules** — collection `access` functions consult `User.role` only for `Knowledge` so far (via `allowedRoles` + `visibility: role`); other collections still use user-*type* rules (`publicCollectionAccess` / `privateCollectionAccess`). Extend a consistent role model across collections.
-- **`searchKnowledge`** is now access-scoped (see #6); the remaining gap is per-role *skill invocation*.
+- **`Roles.permissions`** — a `select` (hasMany) of framework permission keys (currently `content.write`, `runs.read`). This is the "what a Role grants" model (data, not role-name checks).
+- **`requirePermission(permission)`** (`src/collections/helpers/access.ts`) — an access guard: Admins always pass; otherwise the acting principal's `Role` must grant the permission (resolved via Payload, no name matching).
+- **Applied to framework collections**: `BlogPosts`/`Media` write → `content.write`; `AgentRuns` read → `runs.read` (admins still bypass). `Knowledge`/`AgentMemory` keep their richer visibility/owner models.
+- **Escalation closed**: `User.type` and `User.role` are now admin-only to update (field-level access), so a principal cannot self-promote to `Admin` or assign itself a privileged role.
+- **Seed/migration** grants defaults: `admin` → all, `user` → `content.write` (preserves current behaviour), `agent` → none.
 
-Status: **partially implemented.** Skill *invocation* is now role/type-aware: a `Skill` may declare `requiredUserTypes` / `requiredRoles`, enforced by `authorizeSkill` (`src/agents/skills/authorize.ts`) before the handler runs, in both the agent runtime and MCP (Admins always pass). Tests: `tests/unit/skill-authorize.unit.spec.ts`, `tests/int/skill-authorize.int.spec.ts`.
+Tests: `tests/unit/permission-access.unit.spec.ts`, `tests/int/role-access.int.spec.ts`.
 
-Remaining:
-- **Role-aware *data* rules** — collection `access` functions still use user-*type* rules (`publicCollectionAccess` / `privateCollectionAccess`) except `Knowledge` (which uses `visibility` + `allowedRoles`). Extend a consistent role model across collections.
-- A `Role`→permissions model (what a Role grants), rather than name checks.
+Apps extend this by adding permission keys to `PERMISSIONS` + the `Roles.permissions` select options, then gating their own collections with `requirePermission` (see `docs/building-applications.md`).
 
-## 12. Long-term agent memory (OPEN)
+## 12. Long-term agent memory (IMPLEMENTED — framework-owned)
 
-Short-term conversation memory is implemented: `ChatSession`/`ChatMessage` in Postgres, loaded by `loadSessionHistory` (last-N window) and prepended to the prompt (`docs/agents.md`). What's missing is **long-term memory** — facts/preferences that persist *across* sessions and agents.
+Short-term conversation memory (`ChatSession`/`ChatMessage`, `loadSessionHistory`) now has a framework-owned **long-term** layer that persists facts/preferences across sessions:
 
-Options to design:
-- **A dedicated `AgentMemory` collection** (framework-owned) with an embedding column, retrieved like Knowledge (hybrid search) and injected into the prompt. Scope by agent/principal so memory is access-controlled like everything else.
-- **Summarisation** — periodically summarise a session into a compact memory record (bounds context and cost).
-- **Retrieval policy** — when to fetch long-term memory (every run? on relevance?), and how to merge with short-term history + Knowledge context without bloating the prompt.
+- **`AgentMemory` collection** (`agent-memories`) — one short record per fact/preference/summary, scoped to an `agent` and owned by that agent's `User` principal. `embedding` + `search_tsv` columns are added via the pgvector schema hook; access is admin OR the agent principal (`owner`).
+- **Retrieval** — `searchMemory` (`src/lib/agent-memory.ts`) is a hybrid (RRF) search over one agent's memories, access-scoped the same way as Knowledge retrieval. Wired into the run prompt via the new **`memory` capability** (`Agent.capabilities`), injected as a `Long-term memory:` block alongside Knowledge context.
+- **Explicit writes** — the `saveMemory` skill (`src/agents/skills/saveMemory.ts`): an agent saves to its own memory (target agent inferred from the principal; admins may specify one). Exposed as both an agent tool and an MCP custom tool.
+- **Auto-summarisation** — `maybeSummarizeSession` (called after each run when the agent has `memory`) enqueues the `summarizeMemory` job once a session crosses `MEMORY_SUMMARIZE_THRESHOLD` (10) new messages; the job summarises the recent window (agent's model) into a `kind: summary` memory. `ChatSession.summarizedCount` is the watermark.
+- **Indexing** — memory records are embedded via the `indexMemory` queue job (mirrors Knowledge reindex; single record, no chunking).
 
-Constraints: store only non-sensitive summaries; never PII; all writes via PayloadCMS; retrieval must respect the caller's access (same rule as `docs/retrieval.md`).
+Constraints honoured: non-sensitive content only, all writes via PayloadCMS, retrieval respects the caller's access. Known simplification: the summariser compacts the most-recent window (last N messages), and the watermark is optimistic at enqueue time.
 
-Status: **open** — decide whether long-term memory is framework-owned (a collection + retriever) or an application concern.
+Follow-ups: cross-agent/shared memory, a `Role`-based memory visibility model, and relevance-gated retrieval (only fetch memory when relevant) rather than always-on.
+
+## 13. Agent evaluation framework (IMPLEMENTED)
+
+Roadmap step 4. The full "run a dataset → score → gate" loop is implemented (`docs/agents.md` → "Evaluation"):
+
+- **`EvalCase`** — one input per agent with an expectation (`type`, `match`, `expected`, `expectFlagged`).
+- **`EvalRun`** / **`EvalResult`** — a batch + one scored row per case (with a link to the `AgentRun` trace). Creating a queued run auto-enqueues the `runEval` job.
+- **Deterministic scorers** (`src/eval/score.ts`) — correctness (exact/contains), tool-use (expected skill called), safety (flagged === `expectFlagged`).
+- **Semantic scorer** (`src/eval/judge.ts` → `judgeCorrectness`) — opt-in `EvalCase.match: 'judge'` grades meaning with the agent's model (paraphrases/synonyms get credit). Fails closed.
+- **Runner** (`src/eval/runner.ts`) — `runEvaluation` runs enabled cases through `runSingleShot` (injectable `model`/`judgeModel` seams), aggregates `score` (mean) + `passed`/`failed`, and applies the gate. The runtime returns `toolCalls`/`flagged`/`flagReasons`.
+- **Gate** — `EvalRun.passThreshold` + computed `gatePassed`; when `Agent.gateEnforced` is on and the gate fails, the runner deactivates the agent (`status: inactive`).
+
+Remaining (later):
+- **Metrics surface** — an admin view/endpoint for pass-rate over time, per-`type`/`tag` breakdown, safety-violation counts.
+- **Red-team suite wiring** — a packaged set of `safety` cases + a CI hook so it runs as part of release checks.

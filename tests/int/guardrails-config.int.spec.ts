@@ -152,4 +152,59 @@ describe('configurable guardrails (integration)', () => {
     })
     expect(result.output).toBe('Your account is [ACCT].')
   })
+
+  it('blocks output matching a custom output block rule in enforce mode', async () => {
+    await payload.create({
+      collection: 'guardrails',
+      data: {
+        name: `no-refund-${stamp}`,
+        enabled: true,
+        direction: 'output',
+        action: 'block',
+        pattern: 'guarantee a full refund',
+      },
+      overrideAccess: true,
+    })
+
+    const agentId = await createAgent('enforce')
+    await expect(
+      runSingleShot({
+        payload,
+        agentId,
+        input: 'hi',
+        model: new FixedModel('I guarantee a full refund'),
+      }),
+    ).rejects.toBeInstanceOf(GuardrailError)
+
+    const run = await latestRun(agentId)
+    expect(run.status).toBe('failed')
+    expect(run.flagReasons).toContain('policy:no-refund')
+  })
+
+  it('flags (but does not block) an output flag rule in monitor mode', async () => {
+    await payload.create({
+      collection: 'guardrails',
+      data: {
+        name: `watch-${stamp}`,
+        enabled: true,
+        direction: 'output',
+        action: 'flag',
+        pattern: 'competitor',
+      },
+      overrideAccess: true,
+    })
+
+    const agentId = await createAgent('monitor')
+    const result = await runSingleShot({
+      payload,
+      agentId,
+      input: 'hi',
+      model: new FixedModel('our competitor is worse'),
+    })
+    expect(result.output).toBe('our competitor is worse')
+
+    const run = await latestRun(agentId)
+    expect(run.flagged).toBe(true)
+    expect(run.flagReasons).toContain('policy:watch')
+  })
 })

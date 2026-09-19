@@ -12,7 +12,11 @@ import { Roles } from './collections/Roles'
 import { Providers } from './collections/Providers'
 import { Agents } from './collections/Agents'
 import { AgentRuns } from './collections/AgentRuns'
+import { AgentMemory } from './collections/AgentMemory'
 import { Guardrails } from './collections/Guardrails'
+import { EvalCase } from './collections/EvalCase'
+import { EvalRun } from './collections/EvalRun'
+import { EvalResult } from './collections/EvalResult'
 import { Media } from './collections/Media'
 import { BlogPosts } from './collections/BlogPosts'
 import { Knowledge } from './collections/Knowledge'
@@ -23,6 +27,9 @@ import { pgVectorSchemaHook } from './collections/helpers/pgvector'
 import { ensureSearchTsvColumn } from './collections/helpers/searchTsv'
 import { runAgentTask } from './jobs/runAgent'
 import { reindexKnowledgeTask } from './jobs/reindexKnowledge'
+import { indexMemoryTask } from './jobs/indexMemory'
+import { summarizeMemoryTask } from './jobs/summarizeMemory'
+import { runEvalTask } from './jobs/runEval'
 import { SKILLS } from './agents/skills'
 import { runSkill } from './agents/skills/authorize'
 import { API_KEY_MASK } from './lib/api-key-mask'
@@ -38,7 +45,7 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
   },
-  collections: [Users, Media, BlogPosts, Knowledge, KnowledgeChunk, ChatSession, ChatMessage, Roles, Providers, Agents, AgentRuns, Guardrails],
+  collections: [Users, Media, BlogPosts, Knowledge, KnowledgeChunk, ChatSession, ChatMessage, Roles, Providers, Agents, AgentRuns, AgentMemory, Guardrails, EvalCase, EvalRun, EvalResult],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
@@ -71,6 +78,33 @@ export default buildConfig({
           { name: 'status', type: 'text' },
         ],
         handler: reindexKnowledgeTask,
+      },
+      {
+        slug: 'indexMemory',
+        label: 'Index memory',
+        inputSchema: [{ name: 'memoryId', type: 'number', required: true }],
+        outputSchema: [{ name: 'status', type: 'text' }],
+        handler: indexMemoryTask,
+      },
+      {
+        slug: 'summarizeMemory',
+        label: 'Summarize memory',
+        inputSchema: [
+          { name: 'agentId', type: 'number', required: true },
+          { name: 'sessionId', type: 'text', required: true },
+        ],
+        outputSchema: [
+          { name: 'memoryId', type: 'number' },
+          { name: 'status', type: 'text' },
+        ],
+        handler: summarizeMemoryTask,
+      },
+      {
+        slug: 'runEval',
+        label: 'Run evaluation',
+        inputSchema: [{ name: 'evalRunId', type: 'number', required: true }],
+        outputSchema: [{ name: 'status', type: 'text' }],
+        handler: runEvalTask,
       },
     ],
     // Process queued jobs in-process. Tune/replace with an external worker as needed.

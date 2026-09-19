@@ -4,6 +4,7 @@ import { countContent } from './countContent'
 import { getContent } from './getContent'
 import { listContent } from './listContent'
 import { searchKnowledge } from './searchKnowledge'
+import { saveMemory } from './saveMemory'
 
 /**
  * Framework skill registry. Each skill is exposed both as an agent tool
@@ -15,6 +16,7 @@ export const SKILLS: Record<string, Skill> = {
   [listContent.name]: listContent,
   [getContent.name]: getContent,
   [countContent.name]: countContent,
+  [saveMemory.name]: saveMemory,
 }
 
 export const SKILL_NAMES = Object.keys(SKILLS)

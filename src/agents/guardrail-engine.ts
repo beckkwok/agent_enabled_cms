@@ -4,16 +4,20 @@ import type { Provider } from '@/payload-types'
 import { resolveProviderApiKey } from '@/lib/provider-key'
 import {
   redactOutput as redactBuiltIn,
+  redactSecrets,
   scanInput as scanBuiltIn,
   type RedactResult,
 } from './guardrails'
 
 export type InputScan = { flagged: boolean; blocked: boolean; reasons: string[] }
 export type OutputRedaction = RedactResult
+export type OutputPolicy = { flagged: boolean; blocked: boolean; reasons: string[] }
 
 export type GuardrailEngine = {
   scanInput: (text: string) => InputScan
   redactOutput: (text: string) => OutputRedaction
+  sanitizePrompt: (text: string) => OutputRedaction
+  evaluateOutputPolicy: (text: string) => OutputPolicy
 }
 
 export type SafetyMode = 'off' | 'monitor' | 'enforce'
@@ -30,6 +34,8 @@ type CustomRule = {
 const NOOP_ENGINE: GuardrailEngine = {
   scanInput: () => ({ flagged: false, blocked: false, reasons: [] }),
   redactOutput: (text) => ({ text, redactions: [] }),
+  sanitizePrompt: (text) => ({ text, redactions: [] }),
+  evaluateOutputPolicy: () => ({ flagged: false, blocked: false, reasons: [] }),
 }
 
 /** Builds a RegExp from a rule, or null when the pattern is invalid. */
@@ -161,6 +167,38 @@ export async function createGuardrailEngine({
       }
 
       return { text: out, redactions }
+    },
+
+    sanitizePrompt(text) {
+      const builtIn = redactSecrets(text)
+      let out = builtIn.text
+      const redactions = [...builtIn.redactions]
+
+      for (const secret of secrets) {
+        if (out.includes(secret)) {
+          out = out.split(secret).join('[REDACTED]')
+          if (!redactions.includes('configured-secret')) redactions.push('configured-secret')
+        }
+      }
+
+      return { text: out, redactions }
+    },
+
+    evaluateOutputPolicy(text) {
+      const reasons: string[] = []
+      let blocked = false
+
+      for (const rule of rules) {
+        if (rule.direction === 'input') continue
+        if (rule.action !== 'block' && rule.action !== 'flag') continue
+        const re = buildRegex(rule.pattern, rule.flags ?? '', false)
+        if (testSafe(re, text)) {
+          reasons.push(`policy:${rule.name}`)
+          if (rule.action === 'block') blocked = true
+        }
+      }
+
+      return { flagged: reasons.length > 0, blocked, reasons }
     },
   }
 }

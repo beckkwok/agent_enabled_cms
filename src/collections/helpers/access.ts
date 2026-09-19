@@ -12,6 +12,14 @@ type UserLike =
       type?: string
     }
 
+/**
+ * Framework permission keys — what a `Role` grants (see `Roles.permissions`).
+ * Apps extend this list (and the `Roles.permissions` select options) when they
+ * add their own permission-gated collections.
+ */
+export const PERMISSIONS = ['content.write', 'runs.read'] as const
+export type Permission = (typeof PERMISSIONS)[number]
+
 /** True for a `users` principal with type Admin. */
 export function isAdminUser(user: UserLike): boolean {
   return Boolean(user && user.collection === 'users' && user.type === 'Admin')
@@ -114,4 +122,32 @@ export const knowledgeWriteAccess: Access = ({ req }) => {
   if (isAdminUser(user)) return true
   if (!user) return false
   return { owner: { equals: user.id } }
+}
+
+// ---------------------------------------------------------------------------
+// Role → permissions
+// ---------------------------------------------------------------------------
+
+async function resolveRolePermissions(req: PayloadRequest, role: unknown): Promise<string[]> {
+  const roleId = typeof role === 'number' ? role : (role as { id?: number } | null | undefined)?.id
+  if (!roleId) return []
+  const doc = await req.payload
+    .findByID({ collection: 'roles', id: roleId, depth: 0, overrideAccess: true })
+    .catch(() => null)
+  return (doc as { permissions?: string[] | null } | null | undefined)?.permissions ?? []
+}
+
+/**
+ * Access guard: allows Admins (implicit full access) and principals whose
+ * `Role` grants the given permission. The grant model lives in data
+ * (`Roles.permissions`), not in code or role-name checks.
+ */
+export function requirePermission(permission: Permission): Access {
+  return async ({ req }) => {
+    const user = req.user as UserLike
+    if (isAdminUser(user)) return true
+    if (!user?.role) return false
+    const permissions = await resolveRolePermissions(req, user.role)
+    return permissions.includes(permission)
+  }
 }

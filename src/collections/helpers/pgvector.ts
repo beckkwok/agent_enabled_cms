@@ -73,5 +73,23 @@ export const pgVectorSchemaHook: PostgresSchemaHook = ({ extendTable, schema }) 
       }),
     })
   }
+
+  // Long-term agent memory: one embedding + FTS column per memory record.
+  const memoryTable = schema.tables['agent_memories']
+  if (memoryTable) {
+    extendTable({
+      table: memoryTable,
+      columns: {
+        embedding: vector(EMBEDDING_DIMENSIONS)('embedding'),
+        search_tsv: tsvector()('search_tsv'),
+      },
+      extraConfig: (t) => ({
+        embeddingIndex: index('agent_memories_embedding_idx')
+          .using('hnsw', t.embedding.op('vector_cosine_ops'))
+          .with({ m: 16, ef_construction: 64 }),
+        searchTsvIndex: index('agent_memories_search_tsv_idx').using('gin', t.search_tsv),
+      }),
+    })
+  }
   return schema
 }

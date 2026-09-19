@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
-import { publicCollectionAccess } from './helpers/access'
+import { requirePermission } from './helpers/access'
 import { autoPublishDate } from './hooks/autoPublishDate'
 
 export const BlogPosts: CollectionConfig = {
@@ -13,7 +13,14 @@ export const BlogPosts: CollectionConfig = {
       return slug ? `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/blogs/${slug}?preview=true` : null
     },
   },
-  access: publicCollectionAccess,
+  // Read is public; writes require the `content.write` permission (admins
+  // always pass). See helpers/access.ts → requirePermission.
+  access: {
+    create: requirePermission('content.write'),
+    read: () => true,
+    update: requirePermission('content.write'),
+    delete: requirePermission('content.write'),
+  },
   hooks: {
     beforeChange: [autoPublishDate],
   },

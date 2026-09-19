@@ -49,7 +49,7 @@ Three layers. Code you write must respect this layering.
 
 - Data collections defined in TypeScript (strong typing).
 - **All data access is protected by PayloadCMS** access control — never bypass it.
-- **All data writes go through PayloadCMS** for core logic — never write directly to the DB around it.
+- **All data writes go through PayloadCMS** for core logic — never write directly to the DB around it. One scoped exception: the *derived* retrieval index (`embedding`/`search_tsv` pgvector/tsvector columns, which Payload has no field type for) is written by system indexing jobs (`reindexKnowledge`/`indexMemory`) via raw SQL — the index is regenerable, and the source-of-truth rows still flow through Payload. See `docs/v1-open-items.md` #2.
 - Provides:
   - Admin UI for human management + web views for data display.
   - API endpoints for agent/role-specific logic.
@@ -123,7 +123,8 @@ Two shapes to support:
 - Agent lifecycle observability: conversations logged, status captured, multi-agent collaboration supported.
 - CMS exposes APIs for agent skills/operations: write transactions, read operations, calculation/reporting.
 - Secrets protected by design: agent/CMS access keys are stored only as HMAC hashes bound to user principals (never plaintext in the DB), and model-provider keys live only in environment/secrets referenced by `Provider.keyRef`.
-- Agent safety: agents must not be trickable into disclosing sensitive information (system prompts, credentials, data the caller can't read). Guardrails + red-team testing are an explicit workstream — see `docs/v1-open-items.md` #9 (not yet implemented).
+- Agent safety: agents must not be trickable into disclosing sensitive information (system prompts, credentials, data the caller can't read). Guardrails + red-team testing are an explicit workstream — see `docs/v1-open-items.md` #9.
+- **Agents must never execute code.** The framework deliberately gives agents **no code-execution surface**: an agent is text-in/text-out plus a whitelisted, access-controlled set of skills (`Agent.tools` → `authorizeSkill` → collection `access`). There is no `eval`/`exec`/shell/`Function`/`vm` path, and model/tool output is never handed to an interpreter. **Treat any "agent executes code" capability as high-risk and avoid it in future applications** — do not add a generic interpreter/shell/code-runner skill, and never route model or tool output into `eval`, `Function`, or a subprocess. High-impact operations must be specific, access-controlled skills (with human-in-the-loop confirmation for destructive writes), never arbitrary code execution.
 
 ## Roadmap (do not assume shipped until verified in code)
 

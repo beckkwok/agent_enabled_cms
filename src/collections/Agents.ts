@@ -69,10 +69,11 @@ export const Agents: CollectionConfig = {
       defaultValue: [],
       options: [
         { label: 'Knowledge base (RAG)', value: 'knowledge' },
+        { label: 'Long-term memory', value: 'memory' },
       ],
       admin: {
         description:
-          'What the agent can do. "knowledge" retrieves context from the framework Knowledge base before answering.',
+          'What the agent can do. "knowledge" retrieves context from the framework Knowledge base; "memory" retrieves the agent\'s long-term memory before answering.',
       },
     },
     {
@@ -127,6 +128,15 @@ export const Agents: CollectionConfig = {
       admin: {
         description:
           'Opt-in: also run a semantic (model-based) prompt-injection check on input. Costs an extra model call per run; off by default.',
+      },
+    },
+    {
+      name: 'gateEnforced',
+      type: 'checkbox',
+      defaultValue: false,
+      admin: {
+        description:
+          'Opt-in: when true, a failing evaluation gate (EvalRun.gatePassed = false) deactivates this agent.',
       },
     },
     {

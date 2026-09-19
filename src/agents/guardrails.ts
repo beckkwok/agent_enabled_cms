@@ -18,7 +18,7 @@ export class GuardrailError extends Error {
   reasons: string[]
 
   constructor(reasons: string[]) {
-    super(`Input blocked by guardrails: ${reasons.join(', ')}`)
+    super(`Blocked by guardrails: ${reasons.join(', ')}`)
     this.name = 'GuardrailError'
     this.reasons = reasons
   }
@@ -76,14 +76,30 @@ export const SECRET_TOKEN_RE = /[A-Za-z0-9_\-+/=]{20,}/g
 const ENTROPY_THRESHOLD = 3.5
 
 /**
+ * Looks like a hash/id rather than a secret: single-case hex (SHA/MD5, txids,
+ * UUIDs) or base64 (padding `=` or the non-url-safe `+`/`/` chars). Real API
+ * keys are mixed-case base62 and never carry those shapes, so this cuts the
+ * common entropy false positives without weakening secret detection.
+ */
+export function isLikelyHashOrId(token: string): boolean {
+  if (/^[0-9a-f]{20,}$/.test(token) || /^[0-9A-F]{20,}$/.test(token)) return true
+  if (/[+/]/.test(token) || /={1,2}$/.test(token)) return true
+  return false
+}
+
+/**
  * Heuristic: does this token look like an unlabelled secret? High entropy +
- * mixed character classes. Catches unknown providers' keys (Grok/xAI, …)
- * without a prefix pattern. Can over-match hashes/IDs — tune the threshold.
+ * three character classes (upper + lower + digit), excluding hash/id shapes.
+ * Catches unknown providers' keys (Grok/xAI, …) without a prefix pattern.
+ *
+ * Three classes (not two) drops single-case hex hashes/IDs; the shape check
+ * drops base64. Tune `ENTROPY_THRESHOLD` if more tuning is needed.
  */
 export function looksLikeSecret(token: string): boolean {
   if (token.length < 20) return false
+  if (isLikelyHashOrId(token)) return false
   const classes = [/[A-Z]/, /[a-z]/, /[0-9]/].filter((re) => re.test(token)).length
-  if (classes < 2) return false
+  if (classes < 3) return false
   return shannonEntropy(token) >= ENTROPY_THRESHOLD
 }
 
@@ -96,12 +112,16 @@ export function scanInput(text: string): GuardrailResult {
   return { flagged: reasons.length > 0, reasons }
 }
 
-/** Redacts secrets and PII (email) from model output. */
-export function redactOutput(text: string): RedactResult {
+/**
+ * Redacts secret-like tokens (not PII/emails) from a string. Used for the
+ * outgoing prompt (defence-in-depth: a secret that leaked into context is
+ * never shown to the model) and as the secret half of `redactOutput`.
+ */
+export function redactSecrets(text: string): RedactResult {
   let out = text
   const redactions: string[] = []
 
-  for (const pattern of [...SECRET_PATTERNS, ...PII_PATTERNS]) {
+  for (const pattern of SECRET_PATTERNS) {
     const re = new RegExp(pattern.source, `${pattern.flags ?? ''}g`)
     if (re.test(out)) {
       redactions.push(pattern.name)
@@ -115,6 +135,23 @@ export function redactOutput(text: string): RedactResult {
     if (!redactions.includes('entropy')) redactions.push('entropy')
     return '[REDACTED]'
   })
+
+  return { text: out, redactions }
+}
+
+/** Redacts secrets and PII (email) from model output. */
+export function redactOutput(text: string): RedactResult {
+  const secrets = redactSecrets(text)
+  let out = secrets.text
+  const redactions = [...secrets.redactions]
+
+  for (const pattern of PII_PATTERNS) {
+    const re = new RegExp(pattern.source, `${pattern.flags ?? ''}g`)
+    if (re.test(out)) {
+      redactions.push(pattern.name)
+      out = out.replace(re, '[REDACTED]')
+    }
+  }
 
   return { text: out, redactions }
 }

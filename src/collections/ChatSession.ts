@@ -29,5 +29,15 @@ export const ChatSession: CollectionConfig = {
         description: 'Agent this conversation belongs to (agent-scoped chat history).',
       },
     },
+    {
+      name: 'summarizedCount',
+      type: 'number',
+      defaultValue: 0,
+      admin: {
+        readOnly: true,
+        description:
+          'Number of messages already folded into long-term memory by the summarisation job.',
+      },
+    },
   ],
 }

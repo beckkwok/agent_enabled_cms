@@ -49,10 +49,11 @@ Callers pass the acting identity:
 **Ingestion (Design A, implemented):** publishing a `Knowledge` doc enqueues a `reindexKnowledge` queue job (`src/jobs/reindexKnowledge.ts`). The job:
 1. resolves the source text — extracted from the uploaded `file` (txt/md/csv/json/html/pdf via `src/lib/extract.ts`) or the `content` field,
 2. deletes old chunks, chunks the text, and embeds in **batches** (`EMBEDDING_BATCH_SIZE = 100`),
-3. writes one `KnowledgeChunk` per chunk (with `overrideAccess: true` — system-generated) + `embedding`/`search_tsv` via raw SQL,
-4. updates the doc's `indexStatus` (`idle`/`pending`/`processing`/`indexed`/`failed`), `chunkCount`, `extractedText`, `indexError`.
+3. writes one `KnowledgeChunk` per chunk (with `overrideAccess: true` — system-generated) + `embedding`/`search_tsv` via raw SQL,4. updates the doc's `indexStatus` (`idle`/`pending`/`processing`/`indexed`/`failed`), `chunkCount`, `extractedText`, `indexError`.
 
 Drafts are not indexed (chunks removed). Because indexing is a queue job, large documents don't block the save request; jobs run via Payload autorun or `payload.jobs.run()`. Chunks still only ever belong to a doc whose visibility the retrieval layer enforces.
+
+> The raw-SQL `embedding`/`search_tsv` write is the **scoped exception** to the "never write directly to DB" rule: it is derived, regenerable index data (system-only jobs, column-scoped), not source-of-truth data. See `docs/v1-open-items.md` #2.
 
 ### Trade-off / follow-up
 - Resolving allowed ids per query is an extra query and materialises the id set; for very large corpora consider **option D** (denormalize the ACL onto each chunk) to filter in SQL directly.

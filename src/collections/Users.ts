@@ -43,12 +43,21 @@ export const Users: CollectionConfig = {
       admin: {
         description: 'User = human; Admin = administrator; Agent = agent security principal.',
       },
+      // Only admins may change a principal's type (a self-edit to 'Admin' would escalate).
+      access: {
+        update: isAdmin,
+      },
     },
     {
       name: 'role',
       type: 'relationship',
       relationTo: 'roles',
       index: true,
+      // Only admins may assign/change a principal's role, otherwise a user could
+      // grant themselves a privileged role (and its permissions).
+      access: {
+        update: isAdmin,
+      },
     },
     // Email added by default
     // Add more fields as needed
