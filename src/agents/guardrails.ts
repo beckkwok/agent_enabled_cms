@@ -155,14 +155,3 @@ export function redactOutput(text: string): RedactResult {
 
   return { text: out, redactions }
 }
-
-/** Convenience: redact a list of strings, returning combined redaction names. */
-export function redactAll(texts: string[]): { texts: string[]; redactions: string[] } {
-  const redactions = new Set<string>()
-  const out = texts.map((t) => {
-    const result = redactOutput(t)
-    result.redactions.forEach((r) => redactions.add(r))
-    return result.text
-  })
-  return { texts: out, redactions: [...redactions] }
-}

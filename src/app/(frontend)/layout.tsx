@@ -1,7 +1,6 @@
 import localFont from 'next/font/local'
 import React from 'react'
 
-import { ChatWidget } from '@/components/ChatWidget'
 import { Nav } from '@/components/Nav'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { Toaster } from '@/components/ui/sonner'
@@ -45,7 +44,6 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
           <footer className="border-t py-8 text-center text-sm text-muted-foreground">
             <p>© {new Date().getFullYear()} {siteConfig.author}. Built with Payload CMS + Next.js.</p>
           </footer>
-          <ChatWidget />
           <Toaster />
         </ThemeProvider>
       </body>

@@ -81,9 +81,3 @@ export async function embedTexts(
   }
   return vectors
 }
-
-/** Embeds a single string. */
-export async function embedText(text: string, options: EmbedTextsOptions = {}): Promise<number[]> {
-  const [vector] = await embedTexts([text], options)
-  return vector
-}

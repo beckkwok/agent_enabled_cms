@@ -4,7 +4,7 @@ Reference for **application developers** who must index very large corporate doc
 
 This is the flexible option (Design B). The framework ships the **quick baseline** (Design A: file upload + text extraction + batched embedding + queue reindex on the `Knowledge` collection). Read this before extending beyond that baseline.
 
-> Contract reminder (`docs/building-applications.md`): build **on top of** the framework. Add app collections/queues/extractors; do not modify framework-owned schema (`Knowledge`, `KnowledgeChunk`, `Agent`, `User`, `Provider`, hybrid retriever). The framework gives you: Payload queue, `Provider` model config, the RRF `HybridSearchRetriever`, and the access-control layer.
+> Contract reminder (`docs/building-applications.md`): build **on top of** the framework. Add app collections/queues/extractors; do not modify framework-owned schema (`Knowledge`, `KnowledgeChunk`, `Agent`, `User`, `Provider`, hybrid retrieval). The framework gives you: Payload queue, `Provider` model config, the RRF `hybridSearch`, and the access-control layer.
 
 ## Problem statement
 
@@ -51,7 +51,7 @@ Upload (file field) ──► Document ──► Queue: reindex job
 
 ## Retrieval integration
 
-- Wrap your app chunks so the framework `HybridSearchRetriever` can return them with provenance in `metadata` (page/section/document id).
+- Wrap your app chunks so the framework hybrid search (`hybridSearch`) can return them with provenance in `metadata` (page/section/document id).
 - **Access control (#6):** constrain the candidate set to `Document`s the caller may read (via Payload `where`) before running hybrid search, or gate retrieval to admin-scoped contexts. Never return chunks from docs the agent/user cannot read.
 - If you need per-page citation in the answer, pass `pageNumber` through retrieved metadata into the prompt context.
 

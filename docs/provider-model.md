@@ -39,8 +39,7 @@ Why a paired grouping: a key is only meaningful *with* its provider — an OpenA
 - Agent helpers: `getAgentProvider(agent)` and `getChatModelForAgent(agent)` build a model from an Agent's `provider` + `model`.
 
 Callers:
-- `src/lib/llm.ts` `getChatModel({ provider?, model?, temperature? })` — provider-aware; **falls back to env `DEEPSEEK_API_KEY`** when no provider is passed (keeps the blog `/api/ask` path working).
-- `src/lib/embeddings.ts` `embedTexts(texts, { provider?, model? })` — provider-aware; falls back to env `OPENAI_API_KEY` (blog path). `MOCK_EMBEDDINGS=1` short-circuits both.
+- `src/lib/embeddings.ts` `embedTexts(texts, { provider?, model? })` — provider-aware; falls back to env `OPENAI_API_KEY`. `MOCK_EMBEDDINGS=1` short-circuits both.
 - The hardcoded `src/lib/deepseek.ts` client was removed (dead code superseded by the runtime).
 
 > Agent runtime wiring (using `getChatModelForAgent` to actually *run* a configured agent) is roadmap step 3 — see `docs/v1-open-items.md`.

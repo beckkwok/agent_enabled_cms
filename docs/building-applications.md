@@ -26,7 +26,7 @@ Add new collections, globals, tools, prompts, agents, and queue jobs **alongside
 
 - **Core schema groups** — `Page`, `Post`, `Media` (CMS); `Agent`, `Chat session`, `Chat history` (Agent); `User`, `Role`, `Document`, `Provider` (Framework). These are the upgrade surface; changing them breaks future framework migrations.
 - **Access-control architecture** — the role/user model and the rule that all reads/writes route through PayloadCMS.
-- **Embedded LangChain.js agent runtime**, the `HybridSearchRetriever`/RRF retrieval, and the MCP plugin wiring in `payload.config.ts`.
+- **Embedded LangChain.js agent runtime**, the hybrid RRF retrieval (`hybridSearch`/`searchMemory`), and the MCP plugin wiring in `payload.config.ts`.
 - **Shared hooks/migrations** in framework paths. If you must extend behavior, extend by composition (new fields on *your* tables, hooks on *your* collections), not by editing shared framework files.
 
 > Rule of thumb: if a framework upgrade (`git pull` / new framework release) would conflict with your edit, it belongs in the application layer, not a framework file.

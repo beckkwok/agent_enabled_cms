@@ -36,7 +36,6 @@ export function chunkText(
 
   const chunks: string[] = []
   let start = 0
-  const step = chunkSize - overlap
 
   while (start < graphemes.length) {
     let end = Math.min(start + chunkSize, graphemes.length)

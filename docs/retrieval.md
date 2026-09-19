@@ -6,14 +6,14 @@ Design note on how RAG retrieval works in AACMS.
 
 LangChain's default vector store is single-method (plain cosine similarity over pgvector). It has no built-in keyword/hybrid fusion. The blog project (`https://github.com/beckkwok/blog`) already implements a superior hybrid and wraps it as a LangChain `BaseRetriever`, so adopting it costs nothing in LangChain compatibility.
 
-Verified source (blog repo): `src/lib/vectorSearch.ts`, `src/lib/retriever.ts`.
+Verified source (blog repo): `src/lib/vectorSearch.ts` (the LangChain `BaseRetriever` wrapper was dropped in AACMS in favour of the plain `hybridSearch` function).
 
 ### Algorithm (from blog, to carry into AACMS)
 
 - **Semantic arm**: pgvector cosine (`<=>`), HNSW cosine index, over chunk embeddings.
 - **Keyword arm**: Postgres full-text search (`search_tsv` tsvector column) ranked by `ts_rank`.
 - **Fusion**: Reciprocal Rank Fusion (`RRF_K = 60`), per-arm weight, `minSimilarity` floor, `limit`.
-- Exposed to LangChain as `HybridSearchRetriever extends BaseRetriever` → drops into any LangChain.js chain/agent.
+- Exposed as `hybridSearch(payload, query, { user, limit, … })` (`src/lib/vectorSearch.ts`) — callable directly from the agent runtime and skills; no LangChain `BaseRetriever` wrapper is needed.
 
 ## Fit with AACMS (framework code, generalized)
 
@@ -41,8 +41,7 @@ Blog hardcodes concerns that must become framework/generalized code in AACMS:
 
 Callers pass the acting identity:
 - agent runs → the agent's `User` principal (`src/agents/run.ts`),
-- `searchKnowledge` skill → the skill context user,
-- blog `/api/ask` retriever → anonymous (so only `public` knowledge).
+- `searchKnowledge` skill → the skill context user.
 
 **Embedding key (env):** ingestion and query embeddings use `OPENAI_API_KEY` (via `src/lib/embeddings.ts`). It is **mandatory unless `MOCK_EMBEDDINGS=1`** (deterministic mock vectors). If the key is missing and mocking is off, the server logs a warning at boot (`onInit`) and embeddings fail loudly at runtime. Embeddings are not yet wired to the `Provider` collection (open item).
 

@@ -40,7 +40,7 @@ For each change:
 - Pure functions (e.g. RRF `hybridSearch` merging, chunk splitting, score/weight logic) — deterministic inputs, assert order + scores.
 - Collection config: field schema, required constraints, defaults, hooks fire on the right events.
 - Access control: each collection's `access` rules return expected results for `User` / `Admin` / `Agent` / anonymous.
-- Retriever: `HybridSearchRetriever` returns LangChain `Document`s from mocked search results.
+- Retriever: `hybridSearch` / `searchMemory` return scoped, ranked results from mocked vectors (assert order + scores + access scoping).
 - MCP custom tools: handler builds the right Payload operation and passes `overrideAccess: false` + `user: req.user`.
 
 ## End-to-end tests: the agent ↔ CMS path

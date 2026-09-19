@@ -34,17 +34,7 @@ export function isAdmin({ req }: { req: PayloadRequest }): boolean {
   return isAdminUser(req.user as UserLike)
 }
 
-const protectedContentAccess: CollectionAccess = {
-  create: ({ req }) => !!req.user,
-  read: () => true,
-  update: ({ req }) => !!req.user,
-  delete: ({ req }) => !!req.user,
-}
-
-// Public read for content collections; writes restricted to authenticated users
-export const publicCollectionAccess: CollectionAccess = { ...protectedContentAccess }
-
-// Private collections (e.g. Knowledge for the RAG): authenticated for every operation
+// Private collections (e.g. KnowledgeChunk): authenticated for every operation
 export const privateCollectionAccess: CollectionAccess = {
   create: ({ req }) => !!req.user,
   read: ({ req }) => !!req.user,

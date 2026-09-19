@@ -1,5 +1,3 @@
-import { z } from 'zod'
-
 import type { Skill } from './types'
 
 /** Reporting example: counts published blog posts. Access-controlled. */
