@@ -20,6 +20,7 @@ Read these before working in the repo:
 - `docs/provider-model.md` — Provider collection (provider + API key + model pairing).
 - `docs/retrieval.md` — hybrid (RRF) vector search decision and RAG × access-control open item.
 - `docs/building-applications.md` — contract for app developers extending the framework.
+- `docs/tutorial.md` — step-by-step guide to building your first application on the framework.
 - `docs/v1-open-items.md` — design-stage decisions/open questions for v1.
 
 ## Quick start
@@ -28,10 +29,12 @@ Read these before working in the repo:
 cp .env.example .env   # set DATABASE_URL, PAYLOAD_SECRET, provider keys
 pnpm install
 pnpm dev               # http://localhost:3000
-pnpm seed              # sample posts + RAG knowledge
+npx tsx scripts/seed.ts   # sample roles/providers/agent/content + RAG knowledge
 ```
 
-Tests: `pnpm test` (integration + e2e). See `docs/development.md`.
+Tests: `pnpm test` (unit + integration + e2e). See `docs/development.md`.
+
+**New to the framework?** Start with the step-by-step tutorial: **[`docs/tutorial.md`](docs/tutorial.md)** — it walks you from a fresh clone to a working agent-enabled application.
 
 ## Repo layout
 
