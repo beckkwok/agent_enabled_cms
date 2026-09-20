@@ -2,6 +2,7 @@ import { sql, type SQL } from '@payloadcms/db-postgres/drizzle'
 import type { Payload, TypedUser } from 'payload'
 
 import { embedTexts } from './embeddings'
+import { rrfFuse } from './rrf'
 
 export const MEMORY_COLLECTION = 'agent-memories'
 /** Messages accumulated in a session before it is summarised into long-term memory. */
@@ -12,8 +13,6 @@ export type MemorySearchResult = {
   content: string
   similarity: number
 }
-
-const RRF_K = 60
 
 function memoryScope(allowedIds: number[]): SQL {
   const list = sql.join(
@@ -130,23 +129,15 @@ export async function searchMemory(
       : Promise.resolve([]),
   ])
 
-  const scores = new Map<number, { content: string; score: number }>()
-  const addRank = (results: MemorySearchResult[]) => {
-    results.forEach((r, i) => {
-      const contribution = 1 / (RRF_K + i + 1)
-      const existing = scores.get(r.id)
-      if (existing) existing.score += contribution
-      else scores.set(r.id, { content: r.content, score: contribution })
-    })
-  }
+  const fused = rrfFuse(
+    [
+      { candidates: keywordResults.map((r) => ({ key: r.id, content: r.content })) },
+      { candidates: vectorResults.map((r) => ({ key: r.id, content: r.content })) },
+    ],
+    { limit },
+  )
 
-  addRank(keywordResults)
-  addRank(vectorResults)
-
-  return [...scores.entries()]
-    .map(([id, { content, score }]) => ({ id, content, similarity: score }))
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit)
+  return fused.map((r) => ({ id: r.key, content: r.content, similarity: r.similarity }))
 }
 
 /**

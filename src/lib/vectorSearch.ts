@@ -2,6 +2,7 @@ import { sql, type SQL } from '@payloadcms/db-postgres/drizzle'
 import type { Payload, TypedUser } from 'payload'
 
 import { embedTexts } from './embeddings'
+import { rrfFuse } from './rrf'
 
 export type VectorSearchResult = {
   chunkId: number
@@ -9,8 +10,6 @@ export type VectorSearchResult = {
   content: string
   similarity: number
 }
-
-const RRF_K = 60
 
 /** SQL fragment restricting chunks to the allowed knowledge ids. */
 function knowledgeScope(allowedIds: number[]): SQL {
@@ -158,38 +157,24 @@ export async function hybridSearch(
       : Promise.resolve([]),
   ])
 
-  // RRF merge
-  const scores = new Map<number, { content: string; knowledgeId: number; score: number }>()
-  const addRank = (results: VectorSearchResult[], weight: number) => {
-    results.forEach((r, i) => {
-      const rank = i + 1
-      const existing = scores.get(r.chunkId)
-      const contribution = weight / (RRF_K + rank)
-      if (existing) {
-        existing.score += contribution
-      } else {
-        scores.set(r.chunkId, {
-          content: r.content,
-          knowledgeId: r.knowledgeId,
-          score: contribution,
-        })
-      }
-    })
-  }
+  const fused = rrfFuse<number>(
+    [
+      {
+        candidates: keywordResults.map((r) => ({ key: r.chunkId, content: r.content, meta: r.knowledgeId })),
+        weight: weights.keyword,
+      },
+      {
+        candidates: vectorResults.map((r) => ({ key: r.chunkId, content: r.content, meta: r.knowledgeId })),
+        weight: weights.vector,
+      },
+    ],
+    { limit, minSimilarity },
+  )
 
-  addRank(keywordResults, weights.keyword)
-  addRank(vectorResults, weights.vector)
-
-  const merged = [...scores.entries()]
-    .map(([chunkId, { content, knowledgeId, score }]) => ({
-      chunkId,
-      knowledgeId,
-      content,
-      similarity: score,
-    }))
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit)
-    .filter((r) => r.similarity >= minSimilarity)
-
-  return merged
+  return fused.map((r) => ({
+    chunkId: r.key,
+    knowledgeId: r.meta as number,
+    content: r.content,
+    similarity: r.similarity,
+  }))
 }
